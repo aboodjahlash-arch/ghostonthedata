@@ -1,0 +1,33 @@
+{
+  "name": "ghost-in-the-data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --experimental-strip-types --test src/api.test.ts",
+    "typecheck": "tsc -b",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "cesium": "1.146.0",
+    "lucide-react": "0.468.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "22.15.30",
+    "@types/react": "19.1.0",
+    "@types/react-dom": "19.1.0",
+    "typescript": "5.8.3",
+    "vite": "6.4.6",
+    "vite-plugin-static-copy": "2.3.2"
+  },
+  "overrides": {
+    "rollup": "npm:@rollup/wasm-node@4.68.3",
+    "@cesium/engine": "26.4.0"
+  }
+}

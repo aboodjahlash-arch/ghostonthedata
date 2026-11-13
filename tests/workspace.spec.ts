@@ -1,0 +1,35 @@
+import { test, expect } from '@playwright/test';
+test('offline workspace labels reference geometry and unavailable science', async ({ page }) => {
+  await page.route('**/api/**', route => route.abort());
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Mission Control', exact: true })).toBeVisible();
+  await expect(page.getByText('REFERENCE GLOBE', { exact: true })).toBeVisible();
+  await expect(page.getByText('No scientific targets received')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Request mission route' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Research Lab', exact: true }).click();
+  await expect(page.getByText('No experiment records')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Mission Reports', exact: true }).click();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export JSON report' }).click();
+  expect((await download).suggestedFilename()).toBe('ghost-mission-report.json');
+});
+test('TEST FIXTURE ONLY: service targets, route alternatives, and experiment records render', async ({ page }) => {
+  await page.route('**/api/mission', route => route.fulfill({ json: { region: { id: 'test', name: 'TEST FIXTURE Jezero', center: { latitude: 18.44, longitude: 77.58 }, description: 'SIMULATED TEST FIXTURE ONLY' }, targets: [{ id: 'test-target', name: 'SIMULATED TEST TARGET', coordinates: { latitude: 18.44, longitude: 77.58 }, provenance: { source: 'Automated test fixture', classification: 'simulated' }, anomalyScore: 0.42, uncertainty: 0.9, priority: 1, explanation: 'TEST ONLY. No scientific conclusion.' }], layers: [] } }));
+  await page.route('**/api/experiments', route => route.fulfill({ json: { experiments: [{ id: 'test-experiment', name: 'SIMULATED TEST EXPERIMENT', modelVersion: 'test-only', status: 'test fixture', updatedAt: '2026-01-01', metrics: { testMetric: 0.2 }, family: 'false-alarm' }] } }));
+  await page.route('**/api/routes', route => route.fulfill({ json: { routes: ['A', 'B'].map((name, i) => ({ id: name, name: `TEST ${name}`, coordinates: [{ latitude: 18.44, longitude: 77.58 }, { latitude: 18.45, longitude: 77.59 }], distanceMeters: 100 + i, difficulty: 'TEST ONLY', simulatedResourceCost: 2, resourceUnit: 'test-units', explanation: 'SIMULATED TEST ROUTE', provenance: { classification: 'simulated', source: 'Automated test fixture' } })) } }));
+  await page.goto('/');
+  await page.getByRole('button', { name: /SIMULATED TEST TARGET/ }).click();
+  await expect(page.getByRole('heading', { name: 'SIMULATED TEST TARGET' })).toBeVisible();
+  await page.getByRole('button', { name: 'Use as destination' }).click();
+  await page.getByRole('button', { name: /Select on Mars map/ }).click();
+  await page.locator('.cesium-map canvas').click({ position: { x: 200, y: 220 } });
+  await expect(page.getByRole('button', { name: 'Request mission route' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Request mission route' }).click();
+  await expect(page.getByLabel('Route alternative')).toBeVisible();
+  await page.getByLabel('Route alternative').selectOption('1');
+  const distance = await page.evaluate(() => `${(0.101).toLocaleString(undefined, { maximumFractionDigits: 3 })} km`);
+  await expect(page.getByText(distance, { exact: true }).first()).toBeVisible();
+  await expect(page.locator('.cesium-widget-errorPanel')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Research Lab', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'SIMULATED TEST EXPERIMENT' })).toBeVisible();
+});

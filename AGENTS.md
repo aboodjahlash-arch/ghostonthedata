@@ -1,0 +1,12 @@
+# Frontend workspace
+
+React 19 + TypeScript + Vite + CesiumJS. Frontend only; preserve the backend team's files and coordinate payload changes in INTEGRATION_CONTRACT.md.
+
+Commands: npm install; npm run dev; npm test (Node >=22.6 for native TypeScript stripping); npm run build; npm run preview. Vite copies Cesium runtime assets into /cesium. WebGL browser required. Environment keys are in .env.example. VITE values are browser-visible; never place private credentials in them.
+
+Scientific integrity: never insert fabricated model results or mislabel reference geometry as measured terrain. Jezero is provisional until /api/mission confirms a region. All scientific content needs provenance. Empty/offline states are intentional. Cesium attribution must remain visible.
+
+Windows build compatibility: package.json overrides Rollup with official @rollup/wasm-node because Application Control blocks the native binary. Do not change security policies. Native restoration instructions are in PROGRESS.md. Cesium 1.146 needs the engine 26.4.0 override and a single deduplicated engine instance; 26.5.0 removes exports expected by its entry point. Run npm dedupe if npm ls @cesium/engine shows duplicate engine copies.
+
+Browser verification: npm run test:e2e uses installed Microsoft Edge and a managed dev server on port 5173. Set PLAYWRIGHT_PREVIEW=1 to test the built dist using preview instead; npm run build must succeed first. Tests use clearly labeled intercepted fixtures, not live science. Browser numeric assertions must respect Intl locale formatting. Test artifacts are in ignored test-results/.
+
