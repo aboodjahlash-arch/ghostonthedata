@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ApiError, createApi, flattenMetrics, safeImageUrl, SPATIAL_ALIGNMENT_VERIFIED, validateCoordinate, type Coordinate, type Target } from './api.ts';
+import { ApiError, createApi, flattenMetrics, heightAboveEllipsoidM, safeImageUrl, SPATIAL_ALIGNMENT_VERIFIED, validateCoordinate, type Coordinate, type Target } from './api.ts';
 import { backendFixture, backendExperiments, capturedCatalog } from '../tests/backend-fixtures.ts';
 const base = 'http://localhost:8000';
 const point: Coordinate = { longitude: 77.45, latitude: 18.44, frame: 'backend-unverified' };
@@ -29,7 +29,7 @@ test('actual backend captures compose mission metadata and paginate without drop
   const fixtures = captured(); const catalog = capturedCatalog(); let requests = 0;
   await mockFetch(async url => { const u = new URL(String(url)); if (u.pathname === '/api/targets') { requests++; const offset = Number(u.searchParams.get('offset')); assert.equal(u.searchParams.get('with_geology'), 'true'); const items = catalog.items.slice(offset, offset + 3); return response({ ...catalog, count: items.length, items }); } return response(fixtures[u.pathname as keyof typeof fixtures]); }, async () => {
     const mission = await createApi(base).mission(); assert.equal(requests, 3); assert.equal(mission.region.id, fixtures['/api/mission/region'].region_id); assert.equal(mission.region.crs, fixtures['/api/mission/region'].crs); assert.equal(mission.targets.length, catalog.items.length); assert.equal(mission.issues?.length, 0);
-    const t = mission.targets[0]; assert.equal(t.id, catalog.items[0].target_id); assert.equal(t.coordinates.height, undefined); assert.equal(t.coordinates.frame, 'backend-unverified'); assert.equal(t.elevationMeters, catalog.items[0].elevation_m); assert.equal(t.priority, undefined); assert.equal(t.raw?.provenance.crs, catalog.items[0].provenance.crs); assert.ok(t.imageUrl?.startsWith(base)); assert.equal(mission.layers.every(l => l.status === 'unavailable' && l.crs && !l.geojson), true);
+    const t = mission.targets[0]; assert.equal(t.id, catalog.items[0].target_id); assert.equal(t.coordinates.frame, 'mars-2000-ellipsoid'); assert.ok(Math.abs((t.coordinates.height ?? NaN) - heightAboveEllipsoidM(catalog.items[0].elevation_m, catalog.items[0].latitude_deg)) < 1e-9); assert.equal(t.elevationMeters, catalog.items[0].elevation_m); assert.equal(t.priority, undefined); assert.equal(t.raw?.provenance.crs, catalog.items[0].provenance.crs); assert.ok(t.imageUrl?.startsWith(base)); assert.equal(mission.layers.every(l => l.status === 'unavailable' && l.crs && !l.geojson), true);
   });
 });
 test('503 dataset_missing is unavailable, not empty success; metadata survives partial failure', async () => {
@@ -51,9 +51,26 @@ test('actual analysis capture preserves backend score, uncertainty, reasons, cav
   const target: Target = { id: a.target_id, name: a.target_id, coordinates: { longitude: a.longitude_deg, latitude: a.latitude_deg, frame: 'backend-unverified' }, provenance: { source: 'Backend captured target', classification: 'real' } };
   await mockFetch(async (url, options) => { assert.equal(url, `${base}/api/analyze`); const body = JSON.parse(options?.body as string); assert.deepEqual(body.target_ids, [target.id]); assert.equal(body.include_heatmaps, false); return response(wire); }, async () => { const result = await createApi(base).analyze(target); assert.equal(result.priorityScore, a.priority); assert.equal(result.priority, undefined); assert.equal(result.uncertainty, a.components.find((c: any) => c.name === 'uncertainty')?.value); assert.equal(result.explanation, a.why.join('\n')); assert.deepEqual(result.caveats, [...a.caveats, ...wire.disclaimers]); assert.equal(result.analysis?.crs, wire.crs); });
 });
-test('actual route capture keeps raw areoid elevations and GeoJSON but never enables spatial display or alternatives', async () => {
+test('areoid to ellipsoid transform matches the backend datum validation control points', () => {
+  // Evidence: backend scripts/validate_datum.py at commit 893b231 (PASS).
+  assert.ok(Math.abs(heightAboveEllipsoidM(-2571, 18.4448) - -596.4) < 0.05);
+  assert.ok(Math.abs(heightAboveEllipsoidM(-2907, 18.38) - -945.7) < 0.05);
+  assert.ok(Math.abs(heightAboveEllipsoidM(-1402, 18.85) - 657.3) < 0.05);
+  // Round-trip against the backend's own converted value: the compat mission
+  // endpoint reports height -578.15 for the target whose areoid MOLA elevation
+  // is -2569 m at latitude 18.5229492.
+  assert.ok(Math.abs(heightAboveEllipsoidM(-2569, 18.5229492) - -578.15) < 0.5);
+});
+test('actual route capture keeps raw areoid elevations and GeoJSON while rendering ellipsoid-converted geometry', async () => {
   const wire = backendFixture('plan_route_response');
-  await mockFetch(async () => response(wire), async () => { const routes = await createApi(base).routes('region', point, point, []); assert.equal(routes.length, 1); assert.equal(routes[0].distanceMeters, wire.total_distance_m); assert.equal(routes[0].raw.path[0].elevation_m, wire.path[0].elevation_m); assert.deepEqual(routes[0].raw.geojson, wire.geojson); assert.equal(routes[0].coordinates[0].height, undefined); assert.equal(routes[0].spatialRendering, 'blocked'); assert.equal(SPATIAL_ALIGNMENT_VERIFIED, false); await assert.rejects(createApi(base).routes('region', { ...point, frame: 'cesium-reference' }, point, []), /datum_unresolved/); });
+  await mockFetch(async () => response(wire), async () => {
+    const routes = await createApi(base).routes('region', point, point, []); assert.equal(routes.length, 1); assert.equal(routes[0].distanceMeters, wire.total_distance_m); assert.equal(routes[0].raw.path[0].elevation_m, wire.path[0].elevation_m); assert.deepEqual(routes[0].raw.geojson, wire.geojson); assert.equal(routes[0].spatialRendering, 'enabled'); assert.equal(SPATIAL_ALIGNMENT_VERIFIED, true);
+    const p0 = wire.path[0]; assert.ok(Math.abs((routes[0].coordinates[0].height ?? NaN) - heightAboveEllipsoidM(p0.elevation_m, p0.latitude_deg)) < 1e-9);
+    // A Cesium map pick shares the backend's areographic degree convention, so it
+    // is a valid route endpoint now that the datum is verified.
+    await mockFetch(async () => response({ ...wire, found: false }), async () => { assert.deepEqual(await createApi(base).routes('region', { ...point, frame: 'cesium-reference' }, point, []), []); });
+    await assert.rejects(createApi(base).routes('region', { longitude: 200, latitude: 0 }, point, []), /invalid_coordinate/);
+  });
 });
 test('actual captured experiment history maps nested numbers, notes, missing models and genuine families', async () => {
   const capture = backendExperiments();

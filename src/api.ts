@@ -1,14 +1,27 @@
 import type { WireHealth, WireRegion, WireLayers, WireTarget, WireTargets, WireAnalysis, WireAnalyzeRequest, WireRoute, WireRouteRequest, WireExperiments } from './wire.ts';
-export type Coordinate = { longitude: number; latitude: number; height?: number; frame?: 'backend-unverified' | 'cesium-reference' };
+export type Coordinate = { longitude: number; latitude: number; height?: number; frame?: 'backend-unverified' | 'cesium-reference' | 'mars-2000-ellipsoid' };
 export type Provenance = { source: string; classification: 'real' | 'derived' | 'simulated' };
 export type Region = { id: string; name: string; center: Coordinate; description: string; crs?: string };
 export type Target = { id: string; name: string; coordinates: Coordinate; provenance: Provenance; imageUrl?: string; context?: string; anomalyScore?: number; uncertainty?: number; priority?: number; priorityScore?: number; explanation?: string; caveats?: string[]; elevationMeters?: number; crs?: string; raw?: WireTarget; analysis?: WireAnalysis };
 export type Layer = { id: string; name: string; kind: 'imagery' | 'terrain' | 'geology' | 'rover' | 'targets' | 'risk'; status: 'available' | 'loading' | 'unavailable' | 'error'; provenance: Provenance; geojson?: object; tilesetUrl?: string; message?: string; crs?: string; raw?: unknown };
-export type Route = { id: string; name: string; coordinates: Coordinate[]; distanceMeters: number; difficulty: string; simulatedResourceCost: number; resourceUnit: string; explanation: string; provenance: Provenance; crs: string; spatialRendering: 'blocked'; raw: WireRoute };
+export type Route = { id: string; name: string; coordinates: Coordinate[]; distanceMeters: number; difficulty: string; simulatedResourceCost: number; resourceUnit: string; explanation: string; provenance: Provenance; crs: string; spatialRendering: 'blocked' | 'enabled'; raw: WireRoute };
 export type Experiment = { id: string; name: string; modelVersion?: string; status: string; updatedAt: string; metrics: Record<string, number>; family: 'three-ghosts' | 'false-alarm' | 'other'; error?: string; notes: string[]; raw: WireExperiments['items'][number] };
 export type ServiceIssue = { service: string; code: string; message: string };
 export type Mission = { region: Region; targets: Target[]; layers: Layer[]; health?: WireHealth; landingSite?: Coordinate; issues?: ServiceIssue[]; targetTotal?: number; rawRegion?: WireRegion; rawLayers?: WireLayers };
-export const SPATIAL_ALIGNMENT_VERIFIED = false;
+// Lifted after backend commit 893b231: scripts/validate_datum.py PASS - areographic
+// latitude matches USGS/NASA frames unchanged, heights transform areoid -> ellipsoid.
+export const SPATIAL_ALIGNMENT_VERIFIED = true;
+const MARS_2000_A_M = 3396190;
+const MARS_2000_B_M = 3376200;
+export function marsEllipsoidRadiusM(latitudeDeg: number): number {
+  const e2 = 1 - (MARS_2000_B_M * MARS_2000_B_M) / (MARS_2000_A_M * MARS_2000_A_M);
+  const phi = latitudeDeg * Math.PI / 180;
+  const n = MARS_2000_A_M / Math.sqrt(1 - e2 * Math.sin(phi) ** 2);
+  return n * Math.sqrt(Math.cos(phi) ** 2 + (1 - e2) ** 2 * Math.sin(phi) ** 2);
+}
+export function heightAboveEllipsoidM(elevationAreoidM: number, latitudeDeg: number): number {
+  return MARS_2000_A_M + elevationAreoidM - marsEllipsoidRadiusM(latitudeDeg);
+}
 export const provisionalRegion: Region = { id: 'provisional-jezero', name: 'Jezero crater', center: { longitude: 77.58, latitude: 18.44 }, description: 'Provisional reference region. Awaiting confirmed coordinate and vertical datum alignment.' };
 export function validateCoordinate(value: Coordinate): boolean { return !!value && Number.isFinite(value.longitude) && Number.isFinite(value.latitude) && value.longitude >= -180 && value.longitude <= 180 && value.latitude >= -90 && value.latitude <= 90 && (value.height === undefined || Number.isFinite(value.height)); }
 export function safeImageUrl(value?: string): string | undefined { if (!value) return; try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) ? url.href : undefined; } catch { return; } }
@@ -26,7 +39,10 @@ function assertShape(condition: unknown, label: string): asserts condition { if 
 const unique = (values: string[]) => new Set(values).size === values.length;
 const optionalNumber = (v: unknown): number | undefined => finite(v) ? v : undefined;
 const readable = (v: unknown) => text(v) && v ? v : undefined;
-const nativeCoordinate = (v: { longitude_deg: number; latitude_deg: number }): Coordinate => ({ longitude: v.longitude_deg, latitude: v.latitude_deg, frame: 'backend-unverified' });
+// Backend degrees are areographic/planetographic - the same numeric convention as
+// Cesium geodetic latitude, so longitude/latitude pass through unchanged. Only the
+// vertical datum changes: MOLA areoid metres -> metres above the IAU 2000 ellipsoid.
+const ellipsoidCoordinate = (v: { longitude_deg: number; latitude_deg: number }, elevationAreoidM?: number | null): Coordinate => ({ longitude: v.longitude_deg, latitude: v.latitude_deg, height: finite(elevationAreoidM) ? heightAboveEllipsoidM(elevationAreoidM, v.latitude_deg) : undefined, frame: 'mars-2000-ellipsoid' });
 function contextOf(geology: Record<string, unknown>) { return ['name', 'symbol', 'description', 'interpretation'].map(k => readable(geology[k])).filter(Boolean).join(' · '); }
 function issue(service: string, error: unknown): ServiceIssue { return { service, code: error instanceof ApiError ? error.code : 'network_error', message: error instanceof Error ? error.message : String(error) }; }
 export function flattenMetrics(input: Record<string, unknown>, prefix = ''): Record<string, number> {
@@ -71,7 +87,7 @@ export function createApi(base: string) {
     return data;
   }
   function mapTarget(t: WireTarget, crs: string): Target {
-    return { id: t.target_id, name: t.target_id, coordinates: nativeCoordinate(t), crs, elevationMeters: optionalNumber(t.elevation_m), provenance: { source: readable(t.provenance.citation) || readable(t.provenance.publisher) || readable(t.provenance.source_key) || 'Source not supplied', classification: 'real' }, imageUrl: t.image_url ? imageUrl(t.image_url) : imageUrl(`/api/targets/${encodeURIComponent(t.target_id)}/image`), anomalyScore: optionalNumber(t.anomaly_score), priorityScore: optionalNumber(t.priority), context: contextOf(t.geology), raw: t };
+    return { id: t.target_id, name: t.target_id, coordinates: ellipsoidCoordinate(t, t.elevation_m), crs, elevationMeters: optionalNumber(t.elevation_m), provenance: { source: readable(t.provenance.citation) || readable(t.provenance.publisher) || readable(t.provenance.source_key) || 'Source not supplied', classification: 'real' }, imageUrl: t.image_url ? imageUrl(t.image_url) : imageUrl(`/api/targets/${encodeURIComponent(t.target_id)}/image`), anomalyScore: optionalNumber(t.anomaly_score), priorityScore: optionalNumber(t.priority), context: contextOf(t.geology), raw: t };
   }
   async function targets(signal?: AbortSignal): Promise<{ items: Target[]; total: number; crs: string }> {
     const items: Target[] = []; let offset = 0; let total = 0; let crs = '';
@@ -98,8 +114,8 @@ export function createApi(base: string) {
     if (h && !h.model.ready) issues.push({ service: 'model', code: 'model_missing', message: 'Anomaly detection not trained. Analysis is unavailable.' });
     const kinds: Record<string, Layer['kind'] | undefined> = { imagery: 'imagery', elevation: 'terrain', geology: 'geology', rover_imagery: 'rover' };
     return {
-      region: r ? { id: r.region_id, name: r.name, center: nativeCoordinate(r.centre), description: r.rationale, crs: r.crs } : provisionalRegion,
-      landingSite: r && point(r.landing_site) ? nativeCoordinate(r.landing_site) : undefined,
+      region: r ? { id: r.region_id, name: r.name, center: ellipsoidCoordinate(r.centre), description: r.rationale, crs: r.crs } : provisionalRegion,
+      landingSite: r && point(r.landing_site) ? ellipsoidCoordinate(r.landing_site) : undefined,
       targets: h?.dataset.ready === false ? [] : t?.items || [], targetTotal: t?.total, health: h, issues, rawRegion: r, rawLayers: l,
       layers: (l?.layers || []).flatMap(layer => { const kind = kinds[layer.type]; return kind ? [{ id: layer.layer_id, name: layer.title, kind, status: 'unavailable' as const, provenance: { source: layer.attribution, classification: 'real' as const }, crs: layer.crs, raw: layer, message: layer.available ? 'Backend product available; spatial display blocked pending datum alignment.' : 'Backend product unavailable.' }] : []; })
     };
@@ -119,13 +135,13 @@ export function createApi(base: string) {
     return data.items.map(e => ({ id: e.experiment_id, name: readable(e.config.name) || e.experiment_id, modelVersion: readable(e.model_version_id), status: e.status, updatedAt: e.created_at, metrics: flattenMetrics(e.metrics), family: e.config.dataset === 'three_ghosts' ? 'three-ghosts' : e.config.dataset === 'false_alarm' ? 'false-alarm' : 'other', error: readable(e.error), notes: [readable(e.config.notes), ...(Array.isArray(e.metrics.notes) ? e.metrics.notes.filter(text) : [])].filter((v): v is string => !!v), raw: e }));
   }
   async function routes(_regionId: string, start: Coordinate, destination: Coordinate, _targetIds: string[], signal?: AbortSignal): Promise<Route[]> {
-    if (!validateCoordinate(start) || !validateCoordinate(destination) || start.frame !== 'backend-unverified' || destination.frame !== 'backend-unverified') throw new ApiError(0, 'datum_unresolved', 'Use backend-supplied coordinates only. Cesium map picks cannot be transformed while the datum is unresolved.');
+    if (!validateCoordinate(start) || !validateCoordinate(destination)) throw new ApiError(0, 'invalid_coordinate', 'Start and destination must be finite Mars coordinates.');
     const body: WireRouteRequest = { start: { longitude_deg: start.longitude, latitude_deg: start.latitude }, goal: { longitude_deg: destination.longitude, latitude_deg: destination.latitude }, waypoints: [] };
     const data = await request<WireRoute>('/api/plan-route', signal, body, 120000);
     assertShape(typeof data.found === 'boolean' && text(data.crs) && Array.isArray(data.path) && data.path.every(p => point(p) && finite(p.elevation_m) && finite(p.slope_deg) && finite(p.cumulative_cost)) && finite(data.total_distance_m) && data.total_distance_m >= 0 && finite(data.total_cost) && data.total_cost >= 0 && finite(data.max_slope_deg) && finite(data.mean_slope_deg) && text(data.message) && object(data.cost_model) && strings(data.warnings), 'route');
     if (!data.found) return [];
     assertShape(data.path.length >= 1, 'route');
-    return [{ id: 'backend-route', name: 'Backend route', coordinates: data.path.map(nativeCoordinate), distanceMeters: data.total_distance_m, difficulty: `Max ${data.max_slope_deg.toFixed(1)}° / mean ${data.mean_slope_deg.toFixed(1)}° slope`, simulatedResourceCost: data.total_cost, resourceUnit: 'simulated heuristic units', explanation: [data.message, readable(data.cost_model.label), readable(data.cost_model.disclaimer), ...data.warnings].filter(Boolean).join('\n'), provenance: { source: 'GHOST backend route model over MOLA; see retained cost_model and warnings', classification: 'simulated' }, crs: data.crs, spatialRendering: 'blocked', raw: data }];
+    return [{ id: 'backend-route', name: 'Backend route', coordinates: data.path.map(p => ellipsoidCoordinate(p, p.elevation_m)), distanceMeters: data.total_distance_m, difficulty: `Max ${data.max_slope_deg.toFixed(1)}° / mean ${data.mean_slope_deg.toFixed(1)}° slope`, simulatedResourceCost: data.total_cost, resourceUnit: 'simulated heuristic units', explanation: [data.message, readable(data.cost_model.label), readable(data.cost_model.disclaimer), ...data.warnings].filter(Boolean).join('\n'), provenance: { source: 'GHOST backend route model over MOLA; see retained cost_model and warnings', classification: 'simulated' }, crs: data.crs, spatialRendering: 'enabled', raw: data }];
   }
   return { mission, health, region, layers, targets, analyze, experiments, routes };
 }

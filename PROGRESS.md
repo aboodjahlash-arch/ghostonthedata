@@ -1,6 +1,34 @@
 # GHOST IN THE DATA — frontend progress
 
-## Latest status — BACKEND COMPATIBILITY BRANCH (feature/backend-compatibility)
+## Latest status — DATUM RESOLVED, LIVE INTEGRATION VERIFIED (feature/backend-compatibility)
+
+Backend commit `959d44106d2e938499f351029d355c3ae3c52acc` (includes datum work from `893b231`) provided the missing evidence:
+
+- `scripts/validate_datum.py` executed live: PASS. (1) NASA's published Mars 2020 touchdown coordinate falls inside the USGS SIM 3464 landing ellipse with latitude unchanged; (2) MOLA elevation at touchdown is -2571 m vs NASA's published -2570 m; (3) 99.3% of 271 mapped units' median MOLA elevations fall inside their published ranges with latitude unchanged.
+- `scripts/validate_crs.py`: backend's MTM 77.5E inverse matches ArcGIS's own reprojection vertex-by-vertex (763 vertices, <50 m, reported 0.00 m max).
+- Vertical transform (backend `ghost/coords.py:106`): `h_ellipsoid = 3396190 + elevation_areoid - R_ellipsoid(lat)`, where `R_ellipsoid` is the geocentric radius of the IAU 2000 ellipsoid (a=3396190, b=3376200) at the areographic latitude. Control: -2571 m @18.4448 deg -> -596.4 m.
+- Horizontal: backend areographic/planetographic degrees == Cesium geodetic convention; longitude/latitude pass through unchanged. No arbitrary offsets used.
+
+Frontend changes (minimal, frozen shell preserved): `heightAboveEllipsoidM`/`marsEllipsoidRadiusM` replicate the backend equation; `ellipsoidCoordinate` converts native `elevation_m` while keeping raw areoid values in `elevationMeters`; `SPATIAL_ALIGNMENT_VERIFIED` lifted to true; route coordinates render as converted geometry (`spatialRendering: 'enabled'`, raw path/GeoJSON retained); destination map-pick enabled (Cesium geodetic pick shares the areographic convention); mission region now drives the viewer instead of the provisional constant; footnotes updated. Raster/elevation/geology overlay layers remain unavailable (nonstandard tile grid, ~33 MB GeoJSON, no verified render path) — only markers and route lines render.
+
+### Verification — live backend at http://127.0.0.1:8000
+
+- `npm test`: PASS, 12/12 (new control-point + round-trip tests pin the transform; route capture now asserts converted heights + enabled rendering).
+- `npm run typecheck`: PASS, exit 0.
+- `npm run test:e2e`: PASS, 4/4 fixture tests, 39.4 s (regression only; still intercepted fixtures).
+- Live `POST /api/analyze` for `ctx_mosaic:z12:r1620:c5860`: priority 0.4340, score 1.0, uncertainty 0.828, 5 caveats — real result, not fixture.
+- Live `POST /api/plan-route` + `POST /api/routes`: found 12.04 km over 25 DEM cells; compat route heights already ellipsoid-converted by the backend (-597.34 m at start).
+- Backend `scripts/verify_frontend_contract.mjs` (drives this frontend's own `api.ts` module live): all checks PASS except its own outdated assertion that spatial rendering must remain 'blocked' — expected failure caused by the authorized datum sign-off.
+- Live browser smoke (Edge, dev server, NO interception): connected, 409 target rows, real analyze for one target, live route request produced 25.93 km / 50 DEM cells rendered on the globe, Cesium error panel count 0.
+
+### Still NOT verified / blocked
+
+- Geology polygons, elevation grid, and raster tile layers (CTX/HiRISE tiles use a nonstandard origin/resolution scheme — no verified render path). Targets + route lines only.
+- Cesium ion token still unconfigured: globe shows reference ellipsoid, not measured terrain. Converted heights are correct relative to the Mars ellipsoid but the visual surface is still the ellipsoid.
+- Production-preview e2e and mobile/other browsers not rerun after the datum change.
+- Backend verify script needs its `spatialRendering` expectation updated (backend-side file, not modified).
+
+## Previous status — BACKEND COMPATIBILITY BRANCH (feature/backend-compatibility)
 
 Minimal compatibility patch implemented against the backend's normative contract (ml_ghost, branch feature/ai-data-backend, contract v1.0.0). New `src/wire.ts` provides typed wire schemas and narrow adapters for the backend's actual endpoints (`/api/mission/region`, `/api/targets` pagination, `/api/analyze`, `/api/plan-route`, `/api/experiments`, `/api/map/layers`, `/api/health`), composed into the frontend's existing internal view models. Typed errors preserve `dataset_missing`, `model_missing`, `empty_selection` and other backend error codes. Relative image URLs resolve against the API origin; colon-containing target IDs are preserved and URL-encoded. Failed refreshes now clear prior records/selections/routes instead of showing stale success.
 

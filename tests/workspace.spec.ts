@@ -44,7 +44,7 @@ test('backend capture fixtures: target evidence, one route result, research hist
   expect(Object.keys(body).sort()).toEqual(['goal', 'start', 'waypoints']);
   expect(body.waypoints).toEqual([]);
   await expect(page.getByText('Backend route · single backend result', { exact: true })).toBeVisible();
-  await expect(page.getByText(/Spatial route rendering is disabled pending/)).toBeVisible();
+  await expect(page.getByText(/Route geometry is rendered on the Mars 2000 ellipsoid/)).toBeVisible();
   await expect(page.getByLabel('Route alternative')).toHaveCount(0);
   await expect(page.getByRole('checkbox', { name: /Geological units/ })).toBeDisabled();
   await expect(page.locator('.cesium-widget-errorPanel')).toHaveCount(0);
