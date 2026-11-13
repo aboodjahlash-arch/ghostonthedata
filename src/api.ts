@@ -117,7 +117,7 @@ export function createApi(base: string) {
       region: r ? { id: r.region_id, name: r.name, center: ellipsoidCoordinate(r.centre), description: r.rationale, crs: r.crs } : provisionalRegion,
       landingSite: r && point(r.landing_site) ? ellipsoidCoordinate(r.landing_site) : undefined,
       targets: h?.dataset.ready === false ? [] : t?.items || [], targetTotal: t?.total, health: h, issues, rawRegion: r, rawLayers: l,
-      layers: (l?.layers || []).flatMap(layer => { const kind = kinds[layer.type]; return kind ? [{ id: layer.layer_id, name: layer.title, kind, status: 'unavailable' as const, provenance: { source: layer.attribution, classification: 'real' as const }, crs: layer.crs, raw: layer, message: layer.available ? 'Backend product available; spatial display blocked pending datum alignment.' : 'Backend product unavailable.' }] : []; })
+      layers: (l?.layers || []).flatMap(layer => { const kind = kinds[layer.type]; return kind ? [{ id: layer.layer_id, name: layer.title, kind, status: 'unavailable' as const, provenance: { source: layer.attribution, classification: 'real' as const }, crs: layer.crs, raw: layer, message: layer.available ? 'Backend product available; no verified overlay render path (raster/geology).' : 'Backend product unavailable.' }] : []; })
     };
   }
   async function analyze(target: Target, signal?: AbortSignal): Promise<Target> {

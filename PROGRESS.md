@@ -21,12 +21,23 @@ Frontend changes (minimal, frozen shell preserved): `heightAboveEllipsoidM`/`mar
 - Backend `scripts/verify_frontend_contract.mjs` (drives this frontend's own `api.ts` module live): all checks PASS except its own outdated assertion that spatial rendering must remain 'blocked' — expected failure caused by the authorized datum sign-off.
 - Live browser smoke (Edge, dev server, NO interception): connected, 409 target rows, real analyze for one target, live route request produced 25.93 km / 50 DEM cells rendered on the globe, Cesium error panel count 0.
 
+### Stabilization pass (post live-integration milestone)
+
+- `npm run build`: PASS, 22.36 s; JS 4,478.32 kB (gzip 1,216.60 kB); same non-fatal chunk warning.
+- `PLAYWRIGHT_PREVIEW=1 npm run test:e2e` (production bundle via Vite preview, Edge): PASS, 4/4, 23.4 s.
+- `npm test`: PASS, 12/12 (~450 ms).
+- Route parity, identical endpoints start (77.45, 18.44) -> goal (77.60, 18.50): frontend module vs direct `POST /api/plan-route` — distance identical (12040.155170450478 m), cell count identical (25), transformed first height identical (-597.0534091913141 m from areoid -2571 m). PASS.
+- Analysis labels verified: "Anomaly score", "Uncertainty", "BACKEND PRIORITY SCORE"; persistent caution "An anomaly is a signal to investigate, not proof of scientific importance." No probability language anywhere in src/. Caveats pass backend text through verbatim (backend itself states scores are NOT probabilities).
+- Held-out demo target confirmed live: `ctx_mosaic:z12:r1629:c5872` (split=test, 18.3911 N, 78.0688 E, areoid -2444 m). 97 test-split targets exist per health.dataset.splits.
+- Disabled layers verified labeled unavailable with accurate reason ("no verified overlay render path (raster/geology)"); previous "pending datum alignment" wording corrected since the datum is now resolved.
+- Backend coordination item (NOT changed by frontend): `ml_ghost/scripts/verify_frontend_contract.mjs` still asserts `spatialRendering === 'blocked'`; it should expect `'enabled'` per the approved datum alignment. Backend owner to apply; frontend did not modify backend files.
+
 ### Still NOT verified / blocked
 
 - Geology polygons, elevation grid, and raster tile layers (CTX/HiRISE tiles use a nonstandard origin/resolution scheme — no verified render path). Targets + route lines only.
 - Cesium ion token still unconfigured: globe shows reference ellipsoid, not measured terrain. Converted heights are correct relative to the Mars ellipsoid but the visual surface is still the ellipsoid.
-- Production-preview e2e and mobile/other browsers not rerun after the datum change.
-- Backend verify script needs its `spatialRendering` expectation updated (backend-side file, not modified).
+- Mobile layouts and non-Edge browsers not verified.
+- Backend verify script needs its `spatialRendering` expectation updated (backend-side file, coordinated — not modified).
 
 ## Previous status — BACKEND COMPATIBILITY BRANCH (feature/backend-compatibility)
 
