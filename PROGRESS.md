@@ -1,6 +1,21 @@
 # GHOST IN THE DATA — frontend progress
 
-## Current status — FEATURE SCOPE FROZEN / WAITING FOR BACKEND
+## Latest status — BACKEND COMPATIBILITY BRANCH (feature/backend-compatibility)
+
+Minimal compatibility patch implemented against the backend's normative contract (ml_ghost, branch feature/ai-data-backend, contract v1.0.0). New `src/wire.ts` provides typed wire schemas and narrow adapters for the backend's actual endpoints (`/api/mission/region`, `/api/targets` pagination, `/api/analyze`, `/api/plan-route`, `/api/experiments`, `/api/map/layers`, `/api/health`), composed into the frontend's existing internal view models. Typed errors preserve `dataset_missing`, `model_missing`, `empty_selection` and other backend error codes. Relative image URLs resolve against the API origin; colon-containing target IDs are preserved and URL-encoded. Failed refreshes now clear prior records/selections/routes instead of showing stale success.
+
+Spatial safeguards (datum unresolved — pending backend/data-team clarification): raw backend route GeoJSON and areoid elevations are preserved for inspection but are NOT rendered as Cesium geometry; backend geology/elevation raster layers are surfaced as available metadata but never drawn as aligned overlays; map-picked coordinates are not sent to routing. No coordinate transformation was guessed; Mars CRS metadata is retained on payloads.
+
+### Verification — compatibility patch (dev server, Microsoft Edge)
+
+- `npm test`: PASS, 11 tests, 0 failures (~560 ms). Adds adapter tests built from captured backend fixtures: mission composition/metadata, paginated targets preserving CRS, 503 dataset_missing, model_missing, empty analysis selection, non-JSON errors, relative image resolution, analysis score/uncertainty/reasons/caveats, raw route elevations + GeoJSON without unsafe rendering, nested experiment metrics with missing model versions, empty lists, duplicate-page-ID rejection, and invalid scientific-number rejection.
+- `npm run typecheck`: PASS, exit 0.
+- `npm audit`: PASS, 0 vulnerabilities.
+- `npm run build`: PASS, exit 0 — 3,211 modules, 4 Cesium asset groups copied, 26.22 s; JS 4,463.23 kB (gzip 1,211.31 kB); same non-fatal >500 kB chunk warning. One earlier attempt died with a Node heap OOM; a retry passed unmodified, so treat occasional OOM as environmental — rerun or raise `--max-old-space-size` if it recurs.
+- `npm run test:e2e`: PASS, 4/4 tests, 57.6 s: (1) offline reference globe + unavailable science, (2) backend-capture fixtures: target evidence, single route result, research history, spatial safeguards, (3) dataset_missing/model_missing stay unavailable while metadata survives, (4) failed refresh clears prior records/selections/routes. Cesium error-panel count zero in all tests.
+- NOT verified: live backend (127.0.0.1:8000 refused connection at last check), authenticated Cesium Mars terrain, real datum-aligned overlays, production-preview e2e after these changes, mobile/other browsers.
+
+## Previous status — FEATURE SCOPE FROZEN / WAITING FOR BACKEND
 
 Integration handoff finalized on 2026-11-13. No new frontend features or broad architectural changes are planned. This handoff pass changes documentation only; application code, dependency pins, API behavior, and build/test configuration remain frozen. Backend acceptance and actual source-data integration are still pending.
 

@@ -1,0 +1,17 @@
+export type WirePoint = { longitude_deg: number; latitude_deg: number };
+export type WireHealth = { status: 'ok' | 'degraded'; version: string; time_utc: string; region_id: string; dataset: { ready: boolean; [key: string]: unknown }; model: { ready: boolean; [key: string]: unknown }; notes: string[]; capabilities: string[] };
+export type WireSource = { key: string; title: string; publisher: string; url: string; citation: string; crs?: string; [key: string]: unknown };
+export type WireRegion = { region_id: string; name: string; crs: string; centre: WirePoint; landing_site: WirePoint & { name: string; source: string }; bbox: Record<string, number>; rationale: string; sources: WireSource[]; dataset_summary: Record<string, unknown> };
+export type WireLayer = { layer_id: string; title: string; type: string; description: string; url: string; attribution: string; crs: string; min_zoom: number; max_zoom: number; tile_size: number; tile_url_template: string; format: string; available: boolean; provenance_key: string };
+export type WireLayers = { crs: string; layers: WireLayer[]; unavailable: Record<string, string>[]; tile_url_template: string; note: string };
+export type WireTarget = WirePoint & { target_id: string; bbox: Record<string, number>; elevation_m: number | null; slope_deg: number | null; anomaly_score: number | null; priority: number | null; split: string; geology: Record<string, unknown>; image_url: string | null; provenance: Record<string, unknown> };
+export type WireTargets = { count: number; total: number; crs: string; items: WireTarget[]; filters_applied: Record<string, unknown> };
+export type WireComponent = { name: string; value: number; normalised: number; kind: 'learned' | 'rule_based'; weight: number };
+export type WireAnalyzedTarget = WirePoint & { target_id: string; elevation_m: number | null; slope_deg: number | null; anomaly_score: number | null; priority: number; components: WireComponent[]; why: string[]; caveats: string[]; geology: Record<string, unknown>; heatmap: Record<string, unknown> | null; provenance: Record<string, unknown> };
+export type WireAnalyzeRequest = { target_ids?: string[]; top_k: number; strategy: 'ghost'; budget: number; include_heatmaps: boolean };
+export type WireAnalysis = { crs: string; strategy: string; model: Record<string, unknown>; selected: WireAnalyzedTarget[]; selection: Record<string, unknown>; signals: Record<string, unknown>; disclaimers: string[]; generated_at: string };
+export type WireRouteRequest = { start: WirePoint; goal: WirePoint; waypoints: WirePoint[] };
+export type WireRoute = { found: boolean; crs: string; path: (WirePoint & { elevation_m: number; slope_deg: number; cumulative_cost: number })[]; geojson: Record<string, unknown> | null; total_distance_m: number; total_cost: number; max_slope_deg: number; mean_slope_deg: number; estimated_energy: number; expanded_nodes: number; elapsed_s: number; message: string; cost_model: Record<string, unknown>; warnings: string[] };
+export type WireExperiment = { experiment_id: string; created_at: string; status: string; config: Record<string, unknown>; model_version_id: string | null; metrics: Record<string, unknown>; assistant_review: Record<string, unknown>; error: string | null };
+export type WireExperiments = { count: number; items: WireExperiment[] };
+export type WireError = { error: { code: string; message: string; detail?: unknown } };

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as C from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
-import type { Coordinate, Layer, Region, Route, Target } from './api';
+import { SPATIAL_ALIGNMENT_VERIFIED, type Coordinate, type Layer, type Region, type Route, type Target } from './api';
 
 C.Ellipsoid.default = C.Ellipsoid.MARS;
 type Props = { region: Region; targets: Target[]; layers: Layer[]; enabled: string[]; route?: Route; start?: Coordinate; destination?: Coordinate; pickMode: 'start' | 'destination' | null; onPick: (point: Coordinate) => void; onTarget: (target: Target) => void };
@@ -41,6 +41,7 @@ export default function MarsViewer(props: Props) {
     } else setStatus('Reference ellipsoid · ion token required for real imagery and elevation');
     const handler = new C.ScreenSpaceEventHandler(v.scene.canvas);
     handler.setInputAction((event: { position: C.Cartesian2 }) => {
+      if (!SPATIAL_ALIGNMENT_VERIFIED) return;
       const selected = v.scene.pick(event.position);
       const target = current.current.targets.find(t => t.id === selected?.id?.id);
       if (target && !current.current.pickMode) { current.current.onTarget(target); return; }
@@ -54,6 +55,7 @@ export default function MarsViewer(props: Props) {
   useEffect(() => {
     const v = viewer.current; if (!v || !ready) return;
     v.entities.removeAll();
+    if (!SPATIAL_ALIGNMENT_VERIFIED) { v.scene.requestRender(); return; }
     const point = (id: string, name: string, coordinates: Coordinate, color: string) => v.entities.add({ id, position: C.Cartesian3.fromDegrees(coordinates.longitude, coordinates.latitude, (coordinates.height || 0) + 30), point: { pixelSize: 10, color: C.Color.fromCssColorString(color), outlineColor: C.Color.BLACK, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY }, label: { text: name, font: '12px sans-serif', fillColor: C.Color.WHITE, pixelOffset: new C.Cartesian2(0, -24), showBackground: true, backgroundColor: C.Color.BLACK.withAlpha(0.7), disableDepthTestDistance: Number.POSITIVE_INFINITY } });
     if (props.enabled.includes('scientific-targets')) props.targets.forEach(t => point(t.id, t.name, t.coordinates, '#efaa58'));
     if (props.start) point('route-start', 'START', props.start, '#90bca3');
@@ -62,7 +64,7 @@ export default function MarsViewer(props: Props) {
     v.scene.requestRender();
   }, [props.targets, props.enabled, props.route, props.start, props.destination, ready]);
   useEffect(() => {
-    const v = viewer.current; if (!v || !ready) return;
+    const v = viewer.current; if (!v || !ready || !SPATIAL_ALIGNMENT_VERIFIED) return;
     let disposed = false;
     const sources: C.GeoJsonDataSource[] = [];
     const tilesets: C.Cesium3DTileset[] = [];
