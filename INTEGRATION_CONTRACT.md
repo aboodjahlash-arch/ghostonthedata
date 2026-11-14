@@ -1,5 +1,14 @@
 # GHOST IN THE DATA — frontend integration handoff
 
+## 2026-11-14 additive integration update
+
+The user's master autonomous directive supersedes the historical frontend freeze below. Existing Mars payloads and datum conversions remain unchanged. Guided backend-route playback is a frontend-only simulation consumer, not a new backend controller API. Synthetic exploration uses a separate deterministic local sensor/controller module and browser-local checkpoint; it does not send synthetic measurements into the real Mars ML pipeline.
+
+New optional consumer endpoint: `GET /api/discovery/products?keywords=Mars&limit=10`. The backend maps keywords to a verified **registry title wildcard** query with analyzer-dependent token/case behavior (not arbitrary full-text matching or exact body matching). Response: `{hits, count, limit, took_ms, from_cache, query, items, api_base, disclaimer}`. Each item includes `lidvid`, `title`, `description`, `instrument`, `target_name`, `processing_level`, plus optional archival metadata. Hits are upstream registry estimates; indexed coverage is incomplete. Empty lists are valid; malformed/network/upstream responses are errors, not empty successes. The UI uses a 30-second request deadline and never treats metadata as an asset retrieval, model result, or geological analogue. Backend also exposes identifier resolution at `GET /api/discovery/products/{lidvid}`; the current UI search does not call it.
+
+The existing process on port 8000 may still serve pre-discovery code until restarted. Non-disruptive verified development stack uses backend 8001 and frontend 5174 (`VITE_API_BASE_URL=http://127.0.0.1:8001` set on the dev process). Do not infer that a 404 on the old process means the new endpoint is operational there.
+
+
 ## 1. Status and boundary
 
 Frontend handoff finalized against the existing implementation on 2026-11-13. Frontend feature scope is FROZEN; awaiting backend-team acceptance and actual integration. This is the implemented consumer contract, not a claim that the backend already implements or accepts it. No new frontend features or architectural changes are authorized by this handoff.

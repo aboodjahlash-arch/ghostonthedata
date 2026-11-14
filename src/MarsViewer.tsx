@@ -4,7 +4,7 @@ import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { SPATIAL_ALIGNMENT_VERIFIED, type Coordinate, type Layer, type Region, type Route, type Target } from './api';
 
 C.Ellipsoid.default = C.Ellipsoid.MARS;
-type Props = { region: Region; targets: Target[]; layers: Layer[]; enabled: string[]; route?: Route; start?: Coordinate; destination?: Coordinate; pickMode: 'start' | 'destination' | null; onPick: (point: Coordinate) => void; onTarget: (target: Target) => void };
+type Props = { rover?: import('./rover').Playback; region: Region; targets: Target[]; layers: Layer[]; enabled: string[]; route?: Route; start?: Coordinate; destination?: Coordinate; pickMode: 'start' | 'destination' | null; onPick: (point: Coordinate) => void; onTarget: (target: Target) => void };
 export default function MarsViewer(props: Props) {
   const container = useRef<HTMLDivElement>(null);
   const viewer = useRef<C.Viewer | null>(null);
@@ -56,7 +56,7 @@ export default function MarsViewer(props: Props) {
     const v = viewer.current; if (!v || !ready) return;
     v.entities.removeAll();
     if (!SPATIAL_ALIGNMENT_VERIFIED) { v.scene.requestRender(); return; }
-    const point = (id: string, name: string, coordinates: Coordinate, color: string) => v.entities.add({ id, position: C.Cartesian3.fromDegrees(coordinates.longitude, coordinates.latitude, (coordinates.height || 0) + 30), point: { pixelSize: 10, color: C.Color.fromCssColorString(color), outlineColor: C.Color.BLACK, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY }, label: { text: name, font: '12px sans-serif', fillColor: C.Color.WHITE, pixelOffset: new C.Cartesian2(0, -24), showBackground: true, backgroundColor: C.Color.BLACK.withAlpha(0.7), disableDepthTestDistance: Number.POSITIVE_INFINITY } });
+    const point = (id: string, name: string, coordinates: Coordinate, color: string) => v.entities.add({ id, position: C.Cartesian3.fromDegrees(coordinates.longitude, coordinates.latitude, (coordinates.height || 0) + 30), point: { pixelSize: 10, color: C.Color.fromCssColorString(color), outlineColor: C.Color.BLACK, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY }, label: { text: name, font: '12px sans-serif', distanceDisplayCondition: new C.DistanceDisplayCondition(0, 18000), fillColor: C.Color.WHITE, pixelOffset: new C.Cartesian2(0, -24), showBackground: true, backgroundColor: C.Color.BLACK.withAlpha(0.7), disableDepthTestDistance: Number.POSITIVE_INFINITY } });
     if (props.enabled.includes('scientific-targets')) props.targets.forEach(t => point(t.id, t.name, t.coordinates, '#efaa58'));
     if (props.start) point('route-start', 'START', props.start, '#90bca3');
     if (props.destination) point('route-end', 'DESTINATION', props.destination, '#eb895f');
@@ -78,5 +78,17 @@ export default function MarsViewer(props: Props) {
     });
     return () => { disposed = true; if (!v.isDestroyed()) { sources.forEach(s => v.dataSources.remove(s, true)); tilesets.forEach(t => v.scene.primitives.remove(t)); } };
   }, [props.layers, props.enabled, ready]);
-  return <div className="map-wrap"><div ref={container} className="cesium-map" aria-label="Interactive three-dimensional Mars map"/><div className="map-top"><span className="tag">MARS / {props.region.name.toUpperCase()}</span><span className="tag">{terrain ? 'MEASURED TERRAIN' : 'REFERENCE GLOBE'}</span></div><div className="map-tools"><button onClick={home} title="Return to region">⌂</button><button onClick={() => viewer.current?.camera.zoomIn(10000)} aria-label="Zoom in">+</button><button onClick={() => viewer.current?.camera.zoomOut(10000)} aria-label="Zoom out">−</button></div>{props.pickMode && <div className="pick-hint">Click the surface to set {props.pickMode}. <span>Coordinates only; traversability is not verified.</span></div>}<div className="map-caption"><span className={terrain ? 'live-dot' : 'amber-dot'}/>{status}{layerErrors.length > 0 && <span role="alert">{layerErrors.join(' · ')}</span>}</div><div className="map-scale">Drag to orbit · Scroll to zoom · Ctrl + drag to tilt</div></div>;
+  useEffect(() => {
+    const v = viewer.current; if (!v || !ready) return;
+    const id = 'simulated-route-rover';
+    const existing = v.entities.getById(id);
+    if (!props.rover) { if (existing) v.entities.remove(existing); v.scene.requestRender(); return; }
+    const p = props.rover.position;
+    const position = C.Cartesian3.fromDegrees(p.longitude, p.latitude, (p.height ?? 0) + 2);
+    const rover = existing || v.entities.add({ id, box: { dimensions: new C.Cartesian3(2.5, 1.8, 1.3), material: C.Color.SILVER }, label: { text: 'SIMULATED ROVER', font: '12px sans-serif', pixelOffset: new C.Cartesian2(0, -30), showBackground: true }, point: { pixelSize: 12, color: C.Color.CYAN } });
+    rover.position = new C.ConstantPositionProperty(position);
+    rover.orientation = new C.ConstantProperty(C.Transforms.headingPitchRollQuaternion(position, new C.HeadingPitchRoll(props.rover.heading, 0, 0), C.Ellipsoid.MARS));
+    v.scene.requestRender();
+  }, [props.rover, props.route, ready]);
+  return <div className="map-wrap"><div ref={container} className="cesium-map" aria-label="Interactive three-dimensional Mars map"/><div className="map-top"><span className="tag">MARS / {props.region.name.toUpperCase()}</span><span className="tag">{terrain ? 'MEASURED TERRAIN' : 'REFERENCE GLOBE'}</span></div><div className="map-tools">{props.rover && <button aria-label="Focus simulated rover" onClick={() => { const entity = viewer.current?.entities.getById('simulated-route-rover'); if (entity) viewer.current?.flyTo(entity, { offset: new C.HeadingPitchRange(0, -0.5, 60) }); }}>R</button>}<button onClick={home} title="Return to region">⌂</button><button onClick={() => viewer.current?.camera.zoomIn(10000)} aria-label="Zoom in">+</button><button onClick={() => viewer.current?.camera.zoomOut(10000)} aria-label="Zoom out">−</button></div>{props.pickMode && <div className="pick-hint">Click the surface to set {props.pickMode}. <span>Coordinates only; traversability is not verified.</span></div>}<div className="map-caption"><span className={terrain ? 'live-dot' : 'amber-dot'}/>{status}{layerErrors.length > 0 && <span role="alert">{layerErrors.join(' · ')}</span>}</div><div className="map-scale">Drag to orbit · Scroll to zoom · Ctrl + drag to tilt</div></div>;
 }

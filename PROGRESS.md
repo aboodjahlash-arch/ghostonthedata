@@ -1,5 +1,57 @@
 # GHOST IN THE DATA — frontend progress
 
+## Autonomous execution log — 2026-11-14
+
+### Baseline and preservation
+
+Actual repositories: frontend `Desktop/ghost3d` (React 19, TypeScript, Vite, Cesium; not Next.js) and backend `Desktop/ml_ghost`. Frontend started clean at `9db3664` on `feature/backend-compatibility`; checkpoint `checkpoint/pre-autonomous-20261114` preserves it; work branch `feature/rover-execution`. No datasets, weights, history, or existing processes were deleted. Frontend baseline: 12 unit tests passed; production build passed. Existing services were listening on 5173/8000. Live health reported 409 targets and ready DINOv2-Small + Isolation Forest, which is a readiness report, not a new accuracy evaluation.
+
+### Implemented architecture
+
+- Existing Mars API adapter, datum transform, scientific target analysis, experiments, and Cesium viewer are preserved.
+- `rover.ts` executes supplied backend route coordinates incrementally with Mars-distance interpolation, heading, exact endpoint arrival, bounded timesteps, and illustrative energy depletion. `RoutePlayback.tsx` provides start/pause/reset and actual event records. This is **guided route playback**, not closed-loop autonomous driving. Speed is accelerated 10 m/s; battery budget is an illustrative 0.002%/m, not engineering validation. Mars viewport reflects playback position and offers rover focus. Target text labels are distance-gated to reduce overlap; point markers remain available.
+- `synthetic.ts` generates deterministic ridge/crater/valley height fields. The controller obtains bounded numeric sensor samples through a local-sensor interface, not the full hidden map. A known-cell graph planner selects frontiers, avoids sensed slope hazards, moves incrementally, updates observations, and accounts for simulated energy. The renderer separately receives the generated mesh. This is **algorithmic exploration with idealized numeric sensing**, not DINOv2 classification, camera-based perception, geological inference, or validated rover physics. Locally sampled morphology classes come from the simulator and are not learned predictions.
+- `SyntheticExplorer.tsx` renders the actual height mesh, route, observations, hazards, heading, and a simplified procedural chassis/mast/six-wheel schematic using the existing Cesium engine. No second renderer, external model asset, or model dependency was introduced. Seed, start, pause, reset, rover focus, and evidence export are functional. Rounded schematic wheels do not implement suspension or validated contact dynamics.
+- `KnowledgeSearch.tsx` calls the backend PDS discovery endpoint through the typed API client; validates metadata structure; shows identifiers, source, missing metadata, cache status, empty coverage, and errors. Search metadata is not represented as downloaded/processed data or a proven geological analogue. No arbitrary frontend fetch tools or LLM movement controller were added.
+
+### Run and demonstration
+
+1. Backend: follow `../ml_ghost/README.md`; keep server-side keys there, never in VITE values.
+2. Frontend: `npm install`, then `npm run dev`; open the printed local URL. Existing env keys remain in `.env.example`.
+3. **Synthetic Exploration**: runs without backend/OpenRouter. Start survey, pause to inspect numeric samples and timeline, focus rover, export synthetic survey. Change seed and Reset to generate another world. Save checkpoint stores a versioned seed/tick checkpoint in this browser; Restore checkpoint reconstructs the paused controller by bounded deterministic replay, including its observation memory and next decisions. Save before navigating away; checkpoints are not synchronized to backend storage.
+4. **Scientific Targets**: select actual backend evidence; use target as destination; **Mission Planner**: use backend landing site and request route, then Execute simulated route. This route execution is explicitly guided, not claimed as ML autonomy.
+5. **Scientific Knowledge**: submit PDS keywords; inspect returned metadata or the visible upstream error. Registry indexing is incomplete.
+6. Verification: `npm test`, `npm run typecheck`, `npm run build`, `npm run test:e2e`. If intentionally testing the already-running local frontend, set `PLAYWRIGHT_REUSE_SERVER=1`. Otherwise the managed runner correctly refuses an occupied port. Production verification uses a current build and `PLAYWRIGHT_PREVIEW=1` on a free port.
+
+### Research and reuse decision record
+
+No new third-party code, weights, or assets were copied. Existing Cesium, React, DINOv2, and Isolation Forest remain the foundations. Read-only public-source research identified SPOC's input-domain distinction (orbital HiRISE versus rover NAVCAM), Regolith's ROS/Gazebo integration burden, DERT's desktop Java runtime, TIG's offline/container processing role, Access Mars' archived WebVR architecture, PatchCore's industrial-image domain, and ATHENA's procedural browser reference. None was integration-tested or adopted; ATHENA's reuse license was not verified, so no code/assets were copied. Relevant supplied sources: https://github.com/nasa-jpl/SPOC ; https://github.com/Regolith-Project/regolith ; https://david-j-young.com/project-athena.html ; https://github.com/nasa/dert ; https://github.com/NASA-AMMOS/tig ; https://github.com/googlecreativelab/access-mars ; https://github.com/facebookresearch/dinov2 ; https://github.com/amazon-science/patchcore-inspection . This is suitability screening, not complete license/weights/activity due diligence.
+
+### Verification and recovered failures
+
+- Frontend unit suite: 21 passed, including route traversal/arrival, energy exhaustion, invalid inputs, deterministic terrain, local sensor range, hazard/frontier decisions, survey termination, checkpoint replay parity, PDS encoding/schema/error handling, and existing Mars wire/datum captures.
+- Browser development checks: six fixture/offline scenarios passed before the final tracking-control polish; focused synthetic checks also passed after checkpoint save/restore, camera correction, and procedural shader changes. Final rerun results are recorded below when complete.
+- Real, non-intercepted browser workflow passed on frontend 5174/backend 8001: connected mission, actual target analysis 200, actual A* planning 200, visible moving route playback, real PDS metadata 200. The live test is opt-in (`GHOST_LIVE=1`); normal test runs skip it intentionally.
+- Live PDS testing exposed that raw `keywords` is silently ignored by the upstream registry. The backend now issues `title LIKE "Mars*"` with analyzer-dependent token/case matching. An initial browser assertion incorrectly required every returned title to start with literal `Mars`; real results included `MARSIS…` and `Archive Information Package for mars2020…`. That unsupported assertion and the misleading documentation were corrected. Nonsense-title queries returned zero. Mars target-LID filtering and identifier resolution were also tested by the backend task. No assets or complete archives were downloaded by discovery.
+- A concurrent final build + Python suite + two browser workers exhausted system memory (Node allocation failures; NumPy 5.11 MiB allocation failure in a 669,905-segment geology proximity reduction). Browser workers are now limited to one, suites run sequentially, and backend distance calculation now uses exact 8,192-segment chunks with scaling inside each chunk. Targeted numerical parity, chunk-boundary, empty/degenerate tests passed, and the previously failing analysis test passed. The user-owned original services were not stopped; only the additional backend started by this session was temporarily stopped for sequential verification.
+- Production builds pass; Vite retains a large Cesium bundle warning (approximately 4.5 MB minified / 1.23 MB gzip). No security controls or native-binary workarounds were changed.
+
+### Final verified handoff
+
+- `npm test`: **21 passed**.
+- `npm run build`: **passed**, including TypeScript; built with `VITE_API_BASE_URL=http://127.0.0.1:8001` for the non-disruptive demo stack.
+- Backend `python -m pytest tests -x -q`: **131 passed**, one existing Starlette deprecation warning, after exact chunked geology optimization.
+- Built production-preview browser run (`PLAYWRIGHT_PREVIEW=1`, `PLAYWRIGHT_PORT=5175`): **6 passed, 1 intentionally skipped** (live test is opt-in).
+- Final development browser run (`PLAYWRIGHT_REUSE_SERVER=1`, `PLAYWRIGHT_PORT=5174`, `GHOST_LIVE=1`): **7 passed**, including real ML/backend/PDS workflow plus all fixture/failure scenarios. No remaining failing tests in these final runs.
+- `git diff --check`: passed in both repositories; Windows LF/CRLF notices are not test failures. Source changes remain uncommitted and unpushed; baseline checkpoint branches are preserved in both repositories.
+- Additional updated services left running: frontend **http://localhost:5174**, backend **http://127.0.0.1:8001**. Original user services on 5173/8000 were untouched. Browser preview was opened for 5174. Test-managed preview server exits after its suite.
+- Open **Synthetic Exploration** and Start for the offline-capable survey demonstration; Focus rover / Track rover / Overview change the actual Cesium camera. Save/Restore checkpoint persists and resumes this browser's mission; Export synthetic survey includes provenance and evidence. Open **Scientific Knowledge** to run actual PDS metadata discovery. Use **Mission Planner** after target selection for explicitly guided playback of a real backend route.
+
+### Remaining delivery boundaries
+
+Not a completed master directive. Synthetic survey is not yet connected to the orbital-image ML pipeline or backend persistent mission storage. No synthetic camera-image model evaluation, rock detector, compositional sensor, validated physics, full DISCOVER/UNDERSTAND/INVESTIGATE loop, OpenRouter model comparison/inference, controlled assistant, cross-world scientific comparison, or comprehensive mission report has been implemented in the frontend. Real Mars terrain still requires the existing ion configuration; nonstandard raster/geology rendering limitations below remain. Browser JSON exports preserve evidence snapshots; separate versioned localStorage checkpoints reconstruct the controller by deterministic replay, but are not a backend mission database. No claim of life, model accuracy, scientific discovery, flight-grade safety, or geological equivalence is made. Backend work and live archive verification are recorded separately in its existing README/PROGRESS.
+
+
 ## Latest status — DATUM RESOLVED, LIVE INTEGRATION VERIFIED (feature/backend-compatibility)
 
 Backend commit `959d44106d2e938499f351029d355c3ae3c52acc` (includes datum work from `893b231`) provided the missing evidence:

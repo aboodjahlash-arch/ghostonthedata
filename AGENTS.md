@@ -10,3 +10,7 @@ Windows build compatibility: package.json overrides Rollup with official @rollup
 
 Browser verification: npm run test:e2e uses installed Microsoft Edge and a managed dev server on port 5173. Set PLAYWRIGHT_PREVIEW=1 to test the built dist using preview instead; npm run build must succeed first. Tests use clearly labeled intercepted fixtures, not live science. Browser numeric assertions must respect Intl locale formatting. Test artifacts are in ignored test-results/.
 
+Resource limits: run production build, full Python ML tests, and WebGL browser tests sequentially on this machine; simultaneous runs exhausted RAM. Playwright is limited to one worker. Do not stop user-owned services to free memory.
+
+Optional browser settings: PLAYWRIGHT_PORT selects a nondefault port; PLAYWRIGHT_REUSE_SERVER=1 deliberately reuses an existing frontend. GHOST_LIVE=1 enables tests/live.spec.ts against the actual backend/PDS (no interception); normally that test is skipped. The non-disruptive development stack started in the autonomous execution session uses frontend 5174 and backend 8001. PDS keywords map to a registry title wildcard query with analyzer-dependent token/case matching, not a literal whole-title prefix. Use a target LID for exact target-body filtering. Synthetic exploration is algorithmic numeric-sensor simulation, separate from real Mars orbital-image ML; its versioned browser-local checkpoint resumes by deterministic replay.
+

@@ -7,6 +7,13 @@ const point: Coordinate = { longitude: 77.45, latitude: 18.44, frame: 'backend-u
 const response = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
 const captured = () => ({ '/api/health': backendFixture('health'), '/api/mission/region': backendFixture('mission_region'), '/api/map/layers': backendFixture('map_layers') });
 async function mockFetch(fn: typeof fetch, run: () => Promise<void>) { const original = globalThis.fetch; try { globalThis.fetch = fn; await run(); } finally { globalThis.fetch = original; } }
+test('PDS discovery preserves empty results, encodes keywords and rejects malformed metadata', async () => {
+  await mockFetch(async url => { assert.equal(new URL(String(url)).searchParams.get('keywords'), 'Mars & rocks'); return response({ hits: 0, items: [], disclaimer: 'Metadata only', from_cache: false }); }, async () => { assert.deepEqual((await createApi(base).discover('Mars & rocks')).items, []); });
+  for (const payload of [{ hits: 1, items: [{}], disclaimer: 'invalid' }, { hits: -1, items: [], disclaimer: 'invalid' }, { hits: 1, items: 'not a list' }]) {
+    await mockFetch(async () => response(payload), async () => { await assert.rejects(createApi(base).discover('Mars'), /contract_invalid/); });
+  }
+  await mockFetch(async () => response({ error: { code: 'upstream_error', message: 'Registry unavailable' } }, 502), async () => { await assert.rejects(createApi(base).discover('Mars'), /upstream_error/); });
+});
 test('coordinates reject invalid ranges and nonfinite values', () => {
   assert.equal(validateCoordinate(point), true);
   for (const p of [{ longitude: 181, latitude: 0 }, { longitude: 0, latitude: -91 }, { longitude: NaN, latitude: 0 }, { longitude: 0, latitude: 0, height: Infinity }]) assert.equal(validateCoordinate(p), false);

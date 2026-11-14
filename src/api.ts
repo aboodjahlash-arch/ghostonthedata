@@ -143,6 +143,11 @@ export function createApi(base: string) {
     assertShape(data.path.length >= 1, 'route');
     return [{ id: 'backend-route', name: 'Backend route', coordinates: data.path.map(p => ellipsoidCoordinate(p, p.elevation_m)), distanceMeters: data.total_distance_m, difficulty: `Max ${data.max_slope_deg.toFixed(1)}° / mean ${data.mean_slope_deg.toFixed(1)}° slope`, simulatedResourceCost: data.total_cost, resourceUnit: 'simulated heuristic units', explanation: [data.message, readable(data.cost_model.label), readable(data.cost_model.disclaimer), ...data.warnings].filter(Boolean).join('\n'), provenance: { source: 'GHOST backend route model over MOLA; see retained cost_model and warnings', classification: 'simulated' }, crs: data.crs, spatialRendering: 'enabled', raw: data }];
   }
-  return { mission, health, region, layers, targets, analyze, experiments, routes };
+  async function discover(keywords: string, signal?: AbortSignal) {
+    const data = await request<{ hits: number; items: { lidvid: string; title: string; description: string; instrument: string; target_name: string; processing_level: string }[]; disclaimer: string; from_cache: boolean }>('/api/discovery/products?' + new URLSearchParams({ keywords, limit: '10' }), signal, undefined, 30000);
+    assertShape(finite(data.hits) && data.hits >= 0 && Array.isArray(data.items) && data.items.every(p => object(p) && text(p.lidvid) && text(p.title) && text(p.description)) && text(data.disclaimer), 'PDS discovery');
+    return data;
+  }
+  return { mission, health, region, layers, targets, analyze, experiments, routes, discover };
 }
 export const api = createApi(import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8000');
