@@ -1,5 +1,72 @@
 # GHOST IN THE DATA — frontend progress
 
+## Product-gap closure: observation-driven autonomy, 2026-11-14
+
+### Verification continuation checkpoint
+
+Final continuation results: **230 backend tests passed across every one of 13 modules in separate sequential Python processes**, **39 frontend unit tests passed**, TypeScript and final production build passed. Final production browser suite: **7 passed, 2 intentionally skipped live tests**. Separate genuine synthetic/research/PDS browser scenario: **1 passed (21.7 s)**. Restarted backend HTTP elevation/route verified 134x147 retained MOLA, -2907..-787 m; found route 200 in 0.021 s. Actual HTTP analysis without browser returned 200 in 28.782 s. Optional Google Fonts now load after DOM readiness, so unavailable typography cannot block mission startup.
+
+**The final combined Mars browser acceptance test is not green.** Backend logged MemoryError reading the real 152 MB geology JSON while WebGL was open; prewarming analysis passed alone but did not resolve a subsequent browser-startup stall. This is an unresolved constrained-machine integration/resource limitation, not a successful end-to-end Mars check. See `VALIDATION.md` for exact commands, all module counts and failed attempts, and `README.md` for current launch/demo instructions and capability boundaries. Historical working/live results below are not claims about the final combined run.
+
+Intermediate investigation: live Mars first stalled on a nonessential Google Fonts load, then timed out requesting a route. The retained MOLA cache's pixel-snapped edges were incorrectly compared to unsnapped request bounds. Cache validation now checks measured source identity/value parity; targeted cache/routing/API checks passed (56 passed, 2 deselected; separate 2 real-data checks passed). A fresh-process cached route returned 200 in 0.0351 s. Attribution of the entire original timeout to this cache defect is not proven; final live rerun results are stated above.
+
+Before the cache fix, the full backend suite passed 206 tests. Afterwards, a monolithic run stopped at 115 passed with MemoryError in gzip serialization of /api/mission; every module subsequently passed separately. Other user applications remain untouched. Latest source changes are uncommitted on top of preserved e77e3f9/01521da checkpoints. No datasets/weights were deleted. OpenRouter has not had a live model call; demo verification deliberately uses blank OpenRouter key/model to avoid paid requests.
+
+This section supersedes the older synthetic-survey limitations below; historical records are retained.
+
+### Preservation and focused changes
+
+The previously verified work is checkpointed in frontend commit `e77e3f9` and backend commit `01521da`, with `checkpoint/verified-product-baseline-20261114` branches. Frontend commit uses a command-local GHOST Engineering identity because none was configured; no global Git settings or remote history changed. No datasets, weights, Mars endpoints, PDS discovery, datum conversions, renderer dependencies, or security policies were replaced. Original procedural terrain functions and full height arrays are regression-compared with the checkpoint, including original signed noise and Unicode hashing. No cosmetic redesign was undertaken.
+
+### Perception and autonomy architecture
+
+- `synthetic-world.ts` owns terrain, idealized orthographic RGB/depth generation, fixed training-world labels and evaluation-only labels. Active mission labels, slope and hazard truth never cross into controller packets. The sensor takes a private geometry copy; the viewer receives a separate renderable mesh.
+- `perception.ts` trains a genuine standardized supervised 5-nearest-neighbor morphology classifier from 1,875 examples across three fixed training seeds. The active mission cannot use a training seed. Features are center height, gradient and local curvature/residual descriptors extracted from depth pixels. RGB is retained/rendered evidence but is deliberately not a classifier feature. No DINOv2 validation on synthetic ground imagery is claimed.
+- `InvestigationController` receives only a sensor interface, the frozen learned model, and public grid/mobility configuration. It never receives the mission seed, world height array or generated labels. It estimates local morphology, uncalibrated distance-ratio uncertainty, novelty distance and conservative depth-gradient traversability.
+- The actual loop is Discover (capture/infer/map), Understand (rank novelty/uncertainty/class-diversity/frontier candidates), Investigate (known-safe graph route, fresh route-footprint checks, incremental execution, focused capture, repeat analysis, memory update), then another cycle. Counterfactual tests change learned sensor features at identical decision ticks and verify different selected targets.
+- Unknown/hazard cells and diagonal corner cuts are excluded. The old hazardous fallback is removed. Route admission includes motion, discrete action, focused-capture and analysis energy while preserving five illustrative energy units. Blocked, sensor-fault, exhausted and complete are separate terminal outcomes. Invalid/duplicate captures and numeric overflow fail closed. A reachable route is not a validated flight-safety certificate.
+- Full capture IDs, observations, target decisions, executed actions, failures and investigation evidence are retained in the event/archive state. Repeat captures use the same static depth under different RGB lighting, so `repeatAgreement` means **repeat consistency only**, never independent geological corroboration or a discovery.
+- Static repeated pixel buffers are immutable/shared internally; inference still runs for each fresh packet. Snapshot cloning preserves buffer sharing and isolates internal memory. At alpha tick 65, 1,253 captures use 95 distinct depth/RGB buffer pairs (about 13.2 times fewer pixel elements). JSON export expands arrays and is about 3.76 MB at that point; long runs/replay remain expensive. No history is silently truncated.
+- The nominal 145 m range limits patch centers, not every pixel. Default 9x9 patches at 10 m/pixel add a 56.57 m corner radius: maximum sampled-distance bound 201.57 m, explicitly recorded in packet/snapshot metadata and UI.
+- V2 checkpoints include model/replay version `synthetic-morphology-knn-v2-original-world-2`, full configuration and seed/tick. The browser uses a separate `ghost.synthetic.checkpoint.v2` key; legacy v1 is preserved but rejected rather than silently replayed with changed controller semantics. Restoration reproduces continued decisions, not merely the displayed rover position.
+
+### Evaluation: synthetic domain only
+
+Two independent holdout seeds, 1,250 samples, original terrain generator:
+
+| Actual / predicted | Plain | Ridge | Crater | Valley |
+|---|---:|---:|---:|---:|
+| Plain | 672 | 10 | 2 | 7 |
+| Ridge | 11 | 319 | 0 | 2 |
+| Crater | 2 | 6 | 29 | 24 |
+| Valley | 9 | 6 | 14 | 137 |
+
+Accuracy 92.56%; majority baseline 55.28%; balanced accuracy 80.85%. Crater recall is only 47.54% (29/61), so crater/valley confusion remains substantial. A +500 m depth calibration bias drops accuracy to 26.56%. Dim RGB yields identical predictions because features use depth, **not because learned visual robustness was demonstrated**. These worlds share a procedural family; none of these metrics establishes real Mars, material/composition classification, dust/occlusion robustness, independent geological interpretation or validated safety.
+
+### Optional research integration and scientific-integrity audit
+
+`ResearchPanel` snapshots up to eight actual inference summaries, IDs, local coordinates, method/version, provenance and measurement-versus-model feature labels. `POST /api/research/interpret` is advisory-only, has no tool/movement interface, and is never called by the autonomy controller. Backend OpenRouter credentials/model stay server-side. Provider output is strict-schema validated, unverified hypotheses only, with citation membership checked against submitted observations and retrieved PDS IDs. Frontend also rejects invented citations or changed echoed measurements. ID membership does not prove scientific entailment.
+
+Explicitly requesting PDS context performs a bounded target-LID-filtered registry search even without an LLM key. Returned deterministic comparisons preserve instrument/investigation/processing metadata and explicitly state that resolution, geometry/illumination, spectra/composition and CRS/units were not supplied by the adapter. They are **metadata_context_only**, `measured_properties_compared: false`; no similarity score or shared-origin conclusion is produced. Missing keys, provider outage/timeouts/schema failures or invalid citations yield unavailable with no hypotheses and do not stop rover operation. No live OpenRouter model has been validated or selected; this remains a provider-integration validation gap.
+
+Audit distinctions:
+- Real NASA imagery/elevation remain in the existing Mars workflow with source provenance; reference ellipsoid and generated local geometry are not measured Mars terrain.
+- Synthetic camera pixels/heights are labeled synthetic observations; morphology/novelty/uncertainty/traversability are predictions or estimates; energy is illustrative simulation.
+- Anomaly score is an unbounded standardized feature distance, never a probability, importance score or life detector.
+- PDS discovery is registry metadata, not downloaded or processed comparable scientific measurements.
+- Assistant statements are unverified hypotheses with supporting/against IDs and missing-information fields. Reports retain actual captures, model metadata, event evidence and optional research at its requested tick.
+- Existing Mars route execution remains explicitly guided playback, distinct from the synthetic observation-driven controller. Mars report exports now include this scientific classification legend.
+
+### Launch and demonstration
+
+From `../ml_ghost`: `python scripts/serve.py --port 8001 --reload`.
+From this frontend in PowerShell: `$env:VITE_API_BASE_URL='http://127.0.0.1:8001'; npm run dev -- --port 5174 --strictPort`.
+Open http://localhost:5174, select **Synthetic Exploration**, Start, and inspect the actual phase, learned morphology, packet image, target route and completed investigation evidence. Seeds `alpha`, `beta`, `gamma` and the default produce different tested decisions. Pause, Save checkpoint, reload the page, return to Synthetic Exploration and Restore checkpoint to continue. Export includes the raw/derived evidence distinction, full archive, versioned checkpoint and optional research response.
+
+Use **Interpret observed evidence** for the advisory request; optionally request Mars PDS metadata context. Without server-side `OPENROUTER_API_KEY` and an explicit `OPENROUTER_MODEL`, no LLM call occurs and autonomy continues. Enabling sends only the selected summaries and bounded metadata to OpenRouter, not ground truth. No model is claimed compatible until actually tested.
+
+Verification commands: `npm test`; `npm run typecheck`; `npm run build`; `npm run test:e2e`. `PLAYWRIGHT_PREVIEW=1` tests a current production build; `PLAYWRIGHT_PORT` selects an unused port; `PLAYWRIGHT_REUSE_SERVER=1` deliberately reuses a dev server; `GHOST_LIVE=1` enables genuine backend/PDS checks. Run heavyweight suites sequentially. Baseline terrain regression requires Git and checkpoint commit `e77e3f9`.
+
 ## Autonomous execution log — 2026-11-14
 
 ### Baseline and preservation

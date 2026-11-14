@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import * as C from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { createSyntheticMission, restoreSyntheticMission, terrainCoordinates, terrainHeightAt, type ExplorerSnapshot, type SyntheticMission, type SyntheticTerrain, type TerrainCellPosition } from './synthetic';
+import SensorEvidence from './SensorEvidence';
+import ResearchPanel from './ResearchPanel';
+import type { ResearchObservation, ResearchResult } from './research.ts';
 
-const panel: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 340px', gap: 14, minHeight: 680, color: '#e8f0ee', fontFamily: 'Inter, system-ui, sans-serif' };
-const mapWrap: CSSProperties = { position: 'relative', minHeight: 680, overflow: 'hidden', borderRadius: 18, border: '1px solid #31413d', background: '#07100f' };
+const panel: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', alignItems: 'start', gap: 14, minHeight: 680, color: '#e8f0ee', fontFamily: 'Inter, system-ui, sans-serif' };
+const mapWrap: CSSProperties = { position: 'sticky', top: 16, height: 680, minHeight: 680, overflow: 'hidden', borderRadius: 18, border: '1px solid #31413d', background: '#07100f' };
 const map: CSSProperties = { position: 'absolute', inset: 0 };
 const overlay: CSSProperties = { position: 'absolute', left: 14, top: 14, display: 'flex', gap: 8, flexWrap: 'wrap', pointerEvents: 'none' };
 const tag: CSSProperties = { padding: '7px 10px', borderRadius: 999, background: 'rgba(7, 16, 15, 0.78)', border: '1px solid rgba(170, 220, 203, 0.22)', fontSize: 11, letterSpacing: 0.8, fontWeight: 700 };
@@ -88,11 +91,26 @@ export default function SyntheticExplorer() {
   const [seed, setSeed] = useState('ghost-synthetic');
   const [running, setRunning] = useState(false);
   const [tracking, setTracking] = useState(false);
+  const [researchResult, setResearchResult] = useState<ResearchResult>();
   const [storageStatus, setStorageStatus] = useState('Checkpoints are browser-local and versioned; no backend database sync.');
   const [rendererStatus, setRendererStatus] = useState('Initializing synthetic 3D renderer');
   const [rendererReady, setRendererReady] = useState(false);
-  const completed = snapshot.status === 'complete' || snapshot.status === 'exhausted';
+  const completed = !['ready', 'exploring'].includes(snapshot.status);
+  const latestObservation = snapshot.observations.find(o => o.captureId === snapshot.captures.at(-1)?.id);
   const featureCounts = useMemo(() => snapshot.observations.reduce<Record<string, number>>((counts, observation) => { counts[observation.feature] = (counts[observation.feature] || 0) + 1; return counts; }, {}), [snapshot.observations]);
+  const researchObservations = useMemo<ResearchObservation[]>(() => [...snapshot.observations]
+    .sort((a, b) => b.observedAt - a.observedAt || b.novelty - a.novelty).slice(0, 8).map(o => ({
+      observation_id: o.captureId, source: 'synthetic',
+      summary: `Model-predicted ${o.feature} morphology at local (${o.x}, ${o.z}) m; tick ${o.observedAt}. Not a geological identification.`,
+      model_method: `${snapshot.model.version} / ${snapshot.model.method}`,
+      provenance: `World ${snapshot.seed}; idealized synthetic orthographic depth observation; not NASA data.`,
+      uncertainty: `Uncalibrated distance-ratio heuristic ${o.uncertainty.toFixed(4)}. ${snapshot.model.limits}`,
+      features: [
+        { name: 'center_depth_height', value: o.height, unit: 'local meters', kind: 'measurement' },
+        { name: 'conservative_depth_gradient', value: o.slope, unit: 'rise/run', kind: 'model_prediction' },
+        { name: 'anomaly_score', value: o.anomalyScore, unit: 'standardized feature distance, not probability', kind: 'model_prediction' }
+      ]
+    })), [snapshot.observations, snapshot.model, snapshot.seed]);
 
   useEffect(() => {
     if (!container.current) return;
@@ -178,12 +196,14 @@ export default function SyntheticExplorer() {
   }, [snapshot, mission, rendererReady]);
 
   const reset = (nextSeed = seed) => {
-    const next = createSyntheticMission(nextSeed || 'ghost-synthetic');
-    setMission(next);
-    setSnapshot(next.snapshot());
-    setRunning(false);
-    setTracking(false);
-    if (viewer.current) viewer.current.trackedEntity = undefined;
+    try {
+      const next = createSyntheticMission(nextSeed || 'ghost-synthetic');
+      setMission(next);
+      setSnapshot(next.snapshot());
+      setRunning(false);
+      setTracking(false);
+      if (viewer.current) viewer.current.trackedEntity = undefined;
+    } catch (e) { setStorageStatus(e instanceof Error ? e.message : 'World reset failed'); }
   };
 
   return <section style={panel} aria-label="Deterministic synthetic exploration sandbox">
@@ -192,13 +212,14 @@ export default function SyntheticExplorer() {
       <div style={overlay}>
         <span style={tag}>SYNTHETIC TERRAIN · NOT MEASURED MARS DATA</span>
         <span style={tag}>{snapshot.status.toUpperCase()}</span>
+        <span style={tag}>AUTONOMOUS / {snapshot.phase.toUpperCase()}</span>
         <span style={tag}>{rendererStatus.toUpperCase()}</span>
       </div>
     </div>
     <aside style={controls}>
       <div style={card}>
         <span style={small}>Deterministic seed</span>
-        <input aria-label="Synthetic terrain seed" style={input} value={seed} onChange={event => setSeed(event.currentTarget.value)} />
+        <input aria-label="Synthetic terrain seed" maxLength={200} style={input} value={seed} onChange={event => setSeed(event.currentTarget.value)} />
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
           <button style={{ ...button, ...(running || completed ? disabled : {}) }} disabled={running || completed} onClick={() => setRunning(true)}>Start</button>
           <button style={{ ...secondary, ...(!running ? disabled : {}) }} disabled={!running} onClick={() => setRunning(false)}>Pause</button>
@@ -209,34 +230,61 @@ export default function SyntheticExplorer() {
         </div>
       </div>
       <div style={card}>
-        <span style={small}>Autonomous frontier survey</span>
+        <span style={small}>Autonomous perception and investigation</span>
+        <p>{snapshot.phase} / {snapshot.stopReason || 'Decisions from observed depth, learned morphology, target ranking and safe graph search.'}</p>
         <div style={metricGrid}>
           <div style={metric}><span style={small}>Coverage</span><strong>{(snapshot.coverage * 100).toFixed(1)}%</strong></div>
-          <div style={metric}><span style={small}>Energy</span><strong>{snapshot.energy.toFixed(0)} / {snapshot.energyMax}</strong></div>
+          <div style={metric}><span style={small}>Simulated energy units</span><strong>{snapshot.energy.toFixed(0)} / {snapshot.energyMax}</strong></div>
           <div style={metric}><span style={small}>Distance</span><strong>{snapshot.distanceMeters.toFixed(0)} m</strong></div>
           <div style={metric}><span style={small}>Tick</span><strong>{snapshot.tick}</strong></div>
           <div style={metric}><span style={small}>Known cells</span><strong>{snapshot.knownCells} / {snapshot.totalCells}</strong></div>
           <div style={metric}><span style={small}>Hazards</span><strong>{snapshot.hazards.length}</strong></div>
+          <div style={metric}><span style={small}>Completed investigations</span><strong>{snapshot.investigations.filter(i => i.status === 'completed').length}</strong></div>
+          <div style={metric}><span style={small}>Failed investigations</span><strong>{snapshot.investigations.filter(i => i.status === 'failed').length}</strong></div>
         </div>
       </div>
       <div style={card}>
-        <span style={small}>Sampled morphology</span>
+        <span style={small}>ML-predicted morphology, not ground truth</span>
+        <p>{snapshot.model.version} · {snapshot.model.trainingSamples} independent synthetic training samples</p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {['ridge', 'crater', 'valley', 'plain'].map(name => <span key={name} style={tag}>{name.toUpperCase()} {featureCounts[name] || 0}</span>)}
         </div>
       </div>
       <div style={card}>
+        <SensorEvidence capture={snapshot.captures.at(-1)}/>
+        {latestObservation && <p>Predicted morphology: {latestObservation.feature}.
+          Anomaly score: {latestObservation.anomalyScore.toFixed(4)} standardized feature distance (not probability).
+          Uncertainty: {latestObservation.uncertainty.toFixed(4)} uncalibrated distance ratio.
+          Estimated depth gradient: {latestObservation.slope.toFixed(3)} rise/run; excluded as hazard: {String(latestObservation.hazard)}.</p>}
+        <p>Maximum observed patch-center range: {snapshot.sensorRangeMeters} m. Pixel footprint extends up to {snapshot.sensorSampling.maximumSampleRangeMeters.toFixed(2)} m from the rover.</p>
+        <p>Conservative traversability cutoff: {snapshot.traversability.slopeLimit.toFixed(3)} rise/run. Simulated energy reserve: {snapshot.energyReserve} units.</p>
+        <p>{snapshot.model.limits}</p>
+      </div>
+      <div style={card}>
+        <ResearchPanel observations={researchObservations} session={mission} tick={snapshot.tick} onResult={setResearchResult}/>
+      </div>
+      <div style={card}>
+        <h3>Investigation evidence</h3>
+        {snapshot.investigations.slice(-5).map((i, n) => <p key={n}>
+          Cell {i.target}: {i.status}{i.reason ? ` / ${i.reason}` : ''}.
+          {i.status === 'completed' && <> Survey {i.surveyCaptureId}; repeat {i.focusedCaptureId}.
+            Predicted {i.predictedClass}; repeat consistency: {String(i.repeatAgreement)}.
+            Static-depth repeat, not independent geological corroboration.</>}
+        </p>)}
+      </div>
+      <div style={card}>
         <span style={small}>Event timeline</span>
-        <ol style={eventList}>
+        <p>{snapshot.events.length} recorded events. Showing latest 10; export retains the full action and decision history.</p>
+        <ol style={eventList} aria-label="Autonomy decision timeline">
           {snapshot.events.slice(-10).reverse().map((event, index) => <li key={`${event.tick}-${index}`} style={{ padding: 9, borderRadius: 10, background: event.kind === 'hazard' ? '#38221f' : '#0a1211', color: event.kind === 'hazard' ? '#ffc0b8' : '#c6d8d2', fontSize: 12, lineHeight: 1.4 }}><strong style={{ color: '#95cfae' }}>T{event.tick}</strong> · {event.message}</li>)}
         </ol>
       </div>
       <div style={card}>
-        <button style={secondary} onClick={() => { const blob = new Blob([JSON.stringify({ generatedAt: new Date().toISOString(), provenance: 'Synthetic numeric-sensor algorithmic survey; not ML or real planetary measurements', snapshot }, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'ghost-synthetic-survey.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }}>Export synthetic survey</button>
-        <div style={{ display: 'flex', gap: 8, margin: '12px 0' }}><button style={secondary} onClick={() => { try { localStorage.setItem('ghost.synthetic.checkpoint.v1', JSON.stringify({ version: 1, seed: snapshot.seed, tick: snapshot.tick })); setStorageStatus('Checkpoint saved in this browser.'); } catch { setStorageStatus('Checkpoint save failed: browser storage unavailable.'); } }}>Save checkpoint</button><button style={secondary} onClick={() => { try { const value = localStorage.getItem('ghost.synthetic.checkpoint.v1'); if (!value) throw new Error('No saved checkpoint in this browser.'); const restored = restoreSyntheticMission(JSON.parse(value)); setRunning(false); setMission(restored); setSnapshot(restored.snapshot()); setSeed(restored.terrain.seed); setStorageStatus('Checkpoint restored paused by deterministic replay.'); } catch (e) { setStorageStatus(e instanceof Error ? e.message : 'Checkpoint restore failed'); } }}>Restore checkpoint</button></div>
+        <button style={secondary} onClick={() => { const blob = new Blob([JSON.stringify({ generatedAt: new Date().toISOString(), provenance: 'Synthetic orthographic depth observations, learned morphology predictions, geometric traversability estimates and unverified advisory hypotheses; not real planetary measurements', snapshot, optionalResearch: researchResult, checkpoint: mission.checkpoint() }, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'ghost-synthetic-survey.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }}>Export synthetic survey</button>
+        <div style={{ display: 'flex', gap: 8, margin: '12px 0' }}><button style={secondary} onClick={() => { try { localStorage.setItem('ghost.synthetic.checkpoint.v2', JSON.stringify(mission.checkpoint())); setStorageStatus('Checkpoint saved in this browser.'); } catch { setStorageStatus('Checkpoint save failed: browser storage unavailable.'); } }}>Save checkpoint</button><button style={secondary} onClick={() => { try { const value = localStorage.getItem('ghost.synthetic.checkpoint.v2'); if (!value) throw new Error('No saved v2 checkpoint in this browser; legacy v1 is preserved but cannot replay changed controller semantics.'); const restored = restoreSyntheticMission(JSON.parse(value)); setRunning(false); setMission(restored); setSnapshot(restored.snapshot()); setSeed(restored.terrain.seed); setStorageStatus('Checkpoint restored paused by deterministic replay.'); } catch (e) { setStorageStatus(e instanceof Error ? e.message : 'Checkpoint restore failed'); } }}>Restore checkpoint</button></div>
         <p role="status" style={disclaimer}>{storageStatus}</p>
         <span style={small}>Integrity</span>
-        <p style={disclaimer}>This module uses a hidden deterministic height field, range-limited numeric samples, graph frontier selection, slope hazards, incremental motion, and energy accounting. Sensing is simulated algorithmic sampling, not machine learning, camera perception, orbital imagery, or measured terrain.</p>
+        <p style={disclaimer}>Raw synthetic RGB/depth packets contain no generated class or hazard labels. Fixed independently trained 5-NN predicts morphology from depth descriptors. Geometric gradients determine conservative traversability; novelty and uncalibrated uncertainty rank follow-up targets, not discoveries. RGB is visual evidence; neither ideal depth nor repeat consistency validates real-world rover safety or geological origin. Synthetic energy is an illustrative estimate. NASA metadata and optional hypotheses retain separate provenance.</p>
       </div>
     </aside>
   </section>;

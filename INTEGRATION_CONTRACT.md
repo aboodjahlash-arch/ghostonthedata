@@ -1,5 +1,30 @@
 # GHOST IN THE DATA — frontend integration handoff
 
+## Observation-driven autonomy and optional research update, 2026-11-14
+
+The synthetic controller now runs independently from observation-only RGB/depth packets and a fixed independently trained depth-morphology 5-NN model. No synthetic payload is passed to the real Mars orbital-image model. Generated truth labels are restricted to separate training/evaluation helpers; mission snapshots expose predictions, observations and evidence, not the active world's labels. `PROGRESS.md` records evaluation limits and checkpoint versions. Existing Mars payloads are unchanged.
+
+New optional endpoint: `POST /api/research/interpret`.
+Request: `{observations: [{observation_id, source: "synthetic", summary, model_method, provenance, uncertainty, features: [{name, value, unit, kind: "measurement" | "model_prediction"}]}], pds_query?: {keywords, target, limit}}`. The UI sends at most eight selected actual observations, with finite features and capture IDs, and never sends commands or the hidden map.
+Response: `{status: "available" | "unavailable", reason, provider, model, observation_summary, datasets, comparisons, interpretations, missing_information, uncertainty, followups, disclaimer}`.
+Every interpretation has `kind: "hypothesis"`, statement, uncertainty, and supporting/against `{observation_ids, dataset_ids}`. Strict schemas reject extra movement/tool fields. Both ends verify citation ID membership; the client verifies echoed observations were not changed. This does not prove scientific entailment.
+
+Controlled PDS requests use exact target context LIDs and bounded title wildcard search. They can provide metadata comparisons even with no LLM configuration. Comparisons are `{observation_id, dataset_id, kind: "metadata_context_only", measured_properties_compared: false, available_metadata_fields, missing_metadata_fields, limitations}`. No quantitative archive data comparison or shared origin is inferred. Null missing fields mean not supplied by this adapter, not absent in an archive.
+
+Unconfigured/offline/failed/timed-out providers yield HTTP 200 `unavailable`, no hypotheses; invalid requests yield 422. Backend deadlines are 5 seconds for optional PDS retrieval and 16 seconds for the provider; UI deadline is 30 seconds. Autonomy never awaits this service. Credentials and explicit model remain server-side; no VITE secret is added. Actual OpenRouter inference/model suitability is unvalidated unless separately recorded.
+
+V2 checkpoint format is `{version: 2, modelVersion, seed, tick, config}` from `mission.checkpoint()`. Legacy v1 is deliberately rejected. Full report export additionally preserves observations, actual packet archive, predictions, phases, decisions and investigation evidence; repeat consistency is not independent corroboration.
+
+Final validation is recorded in `VALIDATION.md`: 230 backend tests, 39 frontend
+units, TypeScript/build, 7 production fixture/offline browser cases and the
+separate genuine synthetic/research/PDS browser case passed. The combined final
+Mars browser acceptance remains unverified due to real geology-cache allocation
+failure and browser startup stalls under constrained memory; successful separate
+HTTP analysis and MOLA/route checks do not replace it. The DEM cache correction
+changes no payload: it accepts verified pixel-snapped measured grid bounds and
+prefers validated retained raw data. Optional Google Fonts are now loaded only
+after DOM readiness so their network availability cannot block initial startup.
+
 ## 2026-11-14 additive integration update
 
 The user's master autonomous directive supersedes the historical frontend freeze below. Existing Mars payloads and datum conversions remain unchanged. Guided backend-route playback is a frontend-only simulation consumer, not a new backend controller API. Synthetic exploration uses a separate deterministic local sensor/controller module and browser-local checkpoint; it does not send synthetic measurements into the real Mars ML pipeline.

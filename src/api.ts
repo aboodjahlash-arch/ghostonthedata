@@ -1,4 +1,5 @@
 import type { WireHealth, WireRegion, WireLayers, WireTarget, WireTargets, WireAnalysis, WireAnalyzeRequest, WireRoute, WireRouteRequest, WireExperiments } from './wire.ts';
+import { validateResearchResponse, type ResearchRequest, type ResearchResponse } from './research.ts';
 export type Coordinate = { longitude: number; latitude: number; height?: number; frame?: 'backend-unverified' | 'cesium-reference' | 'mars-2000-ellipsoid' };
 export type Provenance = { source: string; classification: 'real' | 'derived' | 'simulated' };
 export type Region = { id: string; name: string; center: Coordinate; description: string; crs?: string };
@@ -148,6 +149,11 @@ export function createApi(base: string) {
     assertShape(finite(data.hits) && data.hits >= 0 && Array.isArray(data.items) && data.items.every(p => object(p) && text(p.lidvid) && text(p.title) && text(p.description)) && text(data.disclaimer), 'PDS discovery');
     return data;
   }
-  return { mission, health, region, layers, targets, analyze, experiments, routes, discover };
+  async function research(body: ResearchRequest, signal?: AbortSignal): Promise<ResearchResponse> {
+    const data = await request<unknown>('/api/research/interpret', signal, body, 30000);
+    validateResearchResponse(data, body);
+    return data;
+  }
+  return { mission, health, region, layers, targets, analyze, experiments, routes, discover, research };
 }
 export const api = createApi(import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8000');

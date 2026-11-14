@@ -60,6 +60,7 @@ test('backend capture fixtures: target evidence, one route result, research hist
   await expect(page.getByText('by_class.false_alarm.detected_rate_at_95pct', { exact: true })).toBeVisible();
 });
 test('synthetic exploration runs independently offline across seeds and exports evidence', async ({ page }) => {
+  test.setTimeout(120000);
   await page.route('**/api/**', route => route.abort());
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -70,7 +71,7 @@ test('synthetic exploration runs independently offline across seeds and exports 
   await expect(sandbox.getByText(/CESIUM MESH ACTIVE/)).toBeVisible();
   await sandbox.getByRole('button', { name: 'Start', exact: true }).click();
   await expect(sandbox.getByText('EXPLORING', { exact: true })).toBeVisible();
-  await page.waitForTimeout(1000);
+  await expect(sandbox.getByText(/Static-depth repeat, not independent/).first()).toBeVisible({ timeout: 45000 });
   await sandbox.getByRole('button', { name: 'Pause', exact: true }).click();
   await expect(sandbox.getByText(/T[1-9]/).first()).toBeVisible();
   await sandbox.getByRole('button', { name: 'Save checkpoint' }).click();
@@ -78,7 +79,22 @@ test('synthetic exploration runs independently offline across seeds and exports 
   await sandbox.screenshot({ path: 'test-results/synthetic-survey.png' });
   const download = page.waitForEvent('download');
   await sandbox.getByRole('button', { name: 'Export synthetic survey' }).click();
-  expect((await download).suggestedFilename()).toBe('ghost-synthetic-survey.json');
+  const exported = await download;
+  expect(exported.suggestedFilename()).toBe('ghost-synthetic-survey.json');
+  const stream = await exported.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  const report = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  expect(report.checkpoint.version).toBe(2);
+  expect(report.snapshot.model.version).toContain('synthetic-morphology-knn');
+  expect(report.provenance).toContain('not real planetary measurements');
+  expect(report.snapshot.observations.every((o: { anomalyScore: number; novelty: number }) => Number.isFinite(o.anomalyScore) && o.anomalyScore === o.novelty)).toBe(true);
+  expect(report.snapshot.captures.every((p: Record<string, unknown>) => !('feature' in p) && !('hazard' in p) && !('label' in p))).toBe(true);
+  const captureIds = new Set(report.snapshot.captures.map((p: { id: string }) => p.id));
+  const completed = report.snapshot.investigations.filter((i: { status: string }) => i.status === 'completed');
+  expect(completed.length).toBeGreaterThan(0);
+  expect(completed.every((i: { surveyCaptureId: string; focusedCaptureId: string; independentCorroboration: boolean }) =>
+    captureIds.has(i.surveyCaptureId) && captureIds.has(i.focusedCaptureId) && i.independentCorroboration === false)).toBe(true);
   await sandbox.getByLabel('Synthetic terrain seed').fill('different-validation-seed');
   await sandbox.getByRole('button', { name: 'Reset', exact: true }).click();
   await expect(sandbox.getByText('READY', { exact: true })).toBeVisible();
@@ -89,8 +105,42 @@ test('synthetic exploration runs independently offline across seeds and exports 
   await sandbox.getByRole('button', { name: 'Restore checkpoint' }).click();
   await expect(sandbox.getByRole('status')).toContainText('restored paused');
   await expect(sandbox.getByLabel('Synthetic terrain seed')).toHaveValue('ghost-synthetic');
+  await expect(sandbox.getByText(/Static-depth repeat, not independent/).first()).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Synthetic Exploration', exact: true }).click();
+  await sandbox.getByRole('button', { name: 'Restore checkpoint' }).click();
+  await expect(sandbox.getByRole('status')).toContainText('restored paused');
+  await expect(sandbox.getByText(/Static-depth repeat, not independent/).first()).toBeVisible();
   await expect(page.locator('.cesium-widget-errorPanel')).toHaveCount(0);
   expect(errors).toEqual([]);
+});
+test('optional research failure and missing configuration cannot stop autonomous investigations', async ({ page }) => {
+  test.setTimeout(120000);
+  await page.route('**/api/**', route => route.abort());
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Synthetic Exploration', exact: true }).click();
+  const sandbox = page.getByRole('region', { name: 'Deterministic synthetic exploration sandbox' });
+  const research = sandbox.getByRole('region', { name: 'Optional scientific research assistant' });
+  await sandbox.getByRole('button', { name: 'Start', exact: true }).click();
+  await research.getByRole('button', { name: 'Interpret observed evidence' }).click();
+  await expect(research.getByRole('alert')).toBeVisible();
+  await expect(sandbox.getByText(/Static-depth repeat, not independent/).first()).toBeVisible({ timeout: 45000 });
+  await page.route('**/api/research/interpret', route => {
+    const body = route.request().postDataJSON();
+    expect(body.observations.length).toBeGreaterThan(0);
+    expect(body.observations.every((o: { source: string; model_method: string }) => o.source === 'synthetic' && o.model_method.includes('knn'))).toBe(true);
+    expect(Object.keys(body).sort()).toEqual(['observations']);
+    return route.fulfill({ json: { status: 'unavailable', reason: 'not_configured', provider: 'OpenRouter', model: null,
+      observation_summary: body.observations, datasets: [], comparisons: [], interpretations: [],
+      missing_information: ['No provider configured - intercepted failure fixture'], uncertainty: 'No assistant inference',
+      followups: [], disclaimer: 'Explicit intercepted test fixture; autonomy independent.' } });
+  });
+  await research.getByRole('button', { name: 'Interpret observed evidence' }).click();
+  await expect(research.getByRole('status')).toContainText('not_configured');
+  await expect(research.getByText('No hypothesis produced.')).toBeVisible();
+  await expect(sandbox.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
+  await sandbox.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect(sandbox.getByLabel('Autonomy decision timeline')).toContainText(/Execute|capture|increment|target|inferred|reserve|safety/);
 });
 test('PDS discovery shows metadata provenance, empty coverage, and upstream errors', async ({ page }) => {
   await capturedBackend(page);

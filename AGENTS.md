@@ -1,5 +1,7 @@
 # Frontend workspace
 
+Synthetic autonomy now uses `perception.ts` (fixed independently trained depth-morphology 5-NN), `synthetic-world.ts` (world/sensor/training/evaluation host) and the sensor-only `InvestigationController`. Never pass active-world truth labels or the renderable terrain into the controller. RGB packets are idealized orthographic evidence, not Cesium framebuffer captures; features use calibrated depth. Do not label RGB-lighting invariance as learned visual robustness or repeat agreement as independent corroboration. Hazard routes fail closed; do not restore the old unsafe fallback. Model/versioned v2 checkpoints come from `mission.checkpoint()`; legacy v1 cannot replay changed semantics. Research is optional, evidence-linked, server-owned and has no movement interface. Baseline terrain parity tests require Git commit `e77e3f9`.
+
 React 19 + TypeScript + Vite + CesiumJS. Frontend only; preserve the backend team's files and coordinate payload changes in INTEGRATION_CONTRACT.md.
 
 Commands: npm install; npm run dev; npm test (Node >=22.6 for native TypeScript stripping); npm run build; npm run preview. Vite copies Cesium runtime assets into /cesium. WebGL browser required. Environment keys are in .env.example. VITE values are browser-visible; never place private credentials in them.
@@ -13,4 +15,3 @@ Browser verification: npm run test:e2e uses installed Microsoft Edge and a manag
 Resource limits: run production build, full Python ML tests, and WebGL browser tests sequentially on this machine; simultaneous runs exhausted RAM. Playwright is limited to one worker. Do not stop user-owned services to free memory.
 
 Optional browser settings: PLAYWRIGHT_PORT selects a nondefault port; PLAYWRIGHT_REUSE_SERVER=1 deliberately reuses an existing frontend. GHOST_LIVE=1 enables tests/live.spec.ts against the actual backend/PDS (no interception); normally that test is skipped. The non-disruptive development stack started in the autonomous execution session uses frontend 5174 and backend 8001. PDS keywords map to a registry title wildcard query with analyzer-dependent token/case matching, not a literal whole-title prefix. Use a target LID for exact target-body filtering. Synthetic exploration is algorithmic numeric-sensor simulation, separate from real Mars orbital-image ML; its versioned browser-local checkpoint resumes by deterministic replay.
-
